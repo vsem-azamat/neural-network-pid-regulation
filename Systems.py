@@ -1,14 +1,15 @@
 from abc import ABC, abstractmethod
 
 
-class BaseSimulationObject(ABC):
+class BaseSystem(ABC):
 	@abstractmethod
-	def update(self, force: float, distrubance: float) -> None:
+	def update(self, control_output: float, distrubance: float) -> None:
 		"""
 		Update the position and velocity of the object
 
 		Args:
-			force (float): force applied to the object
+			control_output (float): control output applied to the object
+			distrubance (float): distrubance applied to the object
 
 		Returns:
 			None
@@ -29,7 +30,7 @@ class BaseSimulationObject(ABC):
 		pass
 
 
-class Trolley(BaseSimulationObject):
+class Trolley(BaseSystem):
 	def __init__(self, mass: float, friction: float, dt: float) -> None:
 		"""
 		Initialize the trolley

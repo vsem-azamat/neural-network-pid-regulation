@@ -4,7 +4,7 @@ from matplotlib import pyplot as plt
 
 # Local imports
 from PID import PID
-from SimObjects import *
+from Systems import *
 
 
 class Simulation:
@@ -29,7 +29,7 @@ class Simulation:
 		self.feedback = np.zeros(len(self.time))
 
 
-	def run(self, simulationObj: BaseSimulationObject, pid: PID) -> None:
+	def run(self, simulationObj: BaseSystem, pid: PID) -> None:
 		"""
 		Run the simulation
 
@@ -51,7 +51,7 @@ class Simulation:
 			# Update the simulation object
 			simulationObj.update(control_output, disturbance)
 
-			# Save the feedback
+			# Save to the feedback updated position
 			self.feedback[i] = simulationObj.get_position()
 
 
@@ -88,6 +88,6 @@ if __name__ == "__main__":
 
 	pid = PID(KP=1, KI=0.1, KD=0.1)
 	tr = Trolley(mass=1, friction=0.1, dt=dt)
-	simulation = Simulation(time, target=target, disturbance=disturbance, dt=dt)
+	simulation = Simulation(time=time, target=target, disturbance=disturbance, dt=dt)
 	simulation.run(tr, pid)
 	simulation.plot()
