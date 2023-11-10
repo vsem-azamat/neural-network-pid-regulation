@@ -83,3 +83,38 @@ class Trolley(BaseSystem):
 			float: position of the trolley
 		"""
 		return self.position
+
+
+class ContinuousTankHeating(BaseSystem):
+
+	def __init__(self, dt: float) -> None:
+		self.dt: float = dt
+		self.Tf = 300
+		self.T: float = 300
+		self.epsilon: float = 1
+		self.tau: float = 4
+		self.Q: float = 2
+
+	
+	def update(self, control_output: float, distrubance: float = 0) -> None:
+		"""
+		Update the position and velocity of the trolley
+		
+		Equation of model:
+			dTdt = 1/(1+epsilon) * [1/tau * (Tf - T) + Q * (Tq - T)]
+
+		Vars:
+			Tq: target temperature
+			Tf: temperature of the incoming fluid
+			T: current temperature
+			tau: residence time		
+			epsilon: ratio of the heat capacity of the tank to the heat capacity of the fluid
+		"""
+		Tq = control_output
+
+		dTdt = 1/(1 + self.epsilon) * (1/self.tau * (self.Tf - self.T) + self.Q * (Tq - self.T))
+		print(dTdt)
+		self.T += dTdt * self.dt
+
+	def get_position(self) -> float:
+		return self.T

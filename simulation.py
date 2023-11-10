@@ -1,5 +1,6 @@
 import numpy as np
 from numpy.typing import NDArray
+from scipy.integrate import odeint
 from matplotlib import pyplot as plt
 
 # Local imports
@@ -79,15 +80,19 @@ class Simulation:
 
 
 if __name__ == "__main__":
-	dt = 0.01
-
-	time = np.arange(0, 100, dt)
-	target = np.ones(len(time))*0.5
-	disturbance = np.zeros(len(time))
+	
+    dt = 0.01
+    time = np.arange(0, 10, dt)
+    target = np.ones(len(time))*350
+    disturbance = np.zeros(len(time))
 	# disturbance[4000:4100] = 0.5
 
-	pid = PID(KP=1, KI=0.1, KD=0.1)
-	tr = Trolley(mass=1, friction=0.1, dt=dt)
-	simulation = Simulation(time=time, target=target, disturbance=disturbance, dt=dt)
-	simulation.run(tr, pid)
-	simulation.plot()
+    pid = PID(KP=1, KI=0.1, KD=0.1)
+    tr = Trolley(mass=1, friction=0.1, dt=dt)
+    tank = ContinuousTankHeating(dt=dt)
+	
+    simulation = Simulation(time=time, target=target, disturbance=disturbance, dt=dt)
+    simulation.run(tank, pid)
+    # simulation.run(tr, pid)
+    simulation.plot()
+

@@ -1,4 +1,3 @@
-from Systems import *
 
 
 class PID:
@@ -44,6 +43,7 @@ class PID:
 		
 		output = self.kp*error + self.ki*self.integral_error + self.kd*derivative_error # compute the output
 		self.error_last = error # update the error
+		print(output)
 
 		if output > self.saturation_max and self.saturation_max:
 			output = self.saturation_max
@@ -65,4 +65,5 @@ class PID:
 		"""
 		self.saturation_max = max
 		self.saturation_min = min
+
 
