@@ -12,13 +12,15 @@ class PID:
             KD (float): derivative gain
 		"""
 		# PID parameters
-		self.kp = KP
-		self.ki = KI
-		self.kd = KD	
+		self.KP: float = KP
+		self.KI: float = KI
+		self.KD: float = KD	
 
         # PID states
-		self.error_last = 0
-		self.integral_error = 0
+		self.error: float = 0
+		self.error_last: float = 0
+		self.integral_error: float = 0
+		self.derivative_error: float = 0
 
 		# PID saturation limits
 		self.saturation_max: float = 1
@@ -37,13 +39,17 @@ class PID:
         Returns:
             float: output of the PID controller
 		"""
-		error = target - position # error = target - current
-		derivative_error = (error - self.error_last) / dt #find the derivative of the error (how the error changes with time)
-		self.integral_error += error * dt #error build up over time
+		# Calculate the errors
+		self.error = target - position # error = target - current
+		self.integral_error += self.error * dt #error build up over time
+		self.derivative_error = (self.error - self.error_last) / dt #find the derivative of the error (how the error changes with time)
+		self.error_last = self.error # update the error
 		
-		output = self.kp*error + self.ki*self.integral_error + self.kd*derivative_error # compute the output
-		self.error_last = error # update the error
-		print(output)
+		# Calculate the output
+		output = \
+			self.KP * self.error + \
+			self.KI * self.integral_error + \
+			self.KD * self.derivative_error
 
 		if output > self.saturation_max and self.saturation_max:
 			output = self.saturation_max

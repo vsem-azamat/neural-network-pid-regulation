@@ -1,11 +1,26 @@
 import numpy as np
 from numpy.typing import NDArray
-from scipy.integrate import odeint
 from matplotlib import pyplot as plt
+from dataclasses import dataclass
+from typing import List
 
 # Local imports
 from PID import PID
 from Systems import *
+
+
+@dataclass
+class SimulationInfo:
+	"""
+	Store the simulation data
+	"""
+	time: float
+	target: float
+	disturbance: float
+
+	U: float
+	dUdt: float
+	dU2dt2: float
 
 
 class Simulation:
@@ -28,6 +43,8 @@ class Simulation:
 		self.dt = dt
 
 		self.feedback = np.zeros(len(self.time))
+
+		self.info: List[SimulationInfo] = []
 
 
 	def run(self, simulationObj: BaseSystem, pid: PID) -> None:
@@ -80,19 +97,20 @@ class Simulation:
 
 
 if __name__ == "__main__":
-	
-    dt = 0.01
-    time = np.arange(0, 10, dt)
-    target = np.ones(len(time))*350
-    disturbance = np.zeros(len(time))
+
+
+	# Trollley
+	dt = 0.01
+	time = np.arange(0, 100, dt)
+	target = np.ones(len(time))*5
+	target[len(time)//2:] = 6
+
+	disturbance = np.zeros(len(time))
 	# disturbance[4000:4100] = 0.5
 
-    pid = PID(KP=1, KI=0.1, KD=0.1)
-    tr = Trolley(mass=1, friction=0.1, dt=dt)
-    tank = ContinuousTankHeating(dt=dt)
+	pid = PID(KP=0.5, KI=0.1, KD=0.5)
+	tr = Trolley(mass=2, friction=1, dt=dt)
+	simulation = Simulation(time=time, target=target, disturbance=disturbance, dt=dt)
 	
-    simulation = Simulation(time=time, target=target, disturbance=disturbance, dt=dt)
-    simulation.run(tank, pid)
-    # simulation.run(tr, pid)
-    simulation.plot()
-
+	simulation.run(tr, pid)
+	simulation.plot()
