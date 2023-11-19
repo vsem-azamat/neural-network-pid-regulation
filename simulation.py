@@ -42,7 +42,8 @@ class Simulation:
 		self.disturbance = disturbance
 		self.dt = dt
 
-		self.feedback = np.zeros(len(self.time))
+		self.feedback_X = np.zeros(len(self.time))
+		self.feedback_U = np.zeros(len(self.time))
 
 		self.info: List[SimulationInfo] = []
 
@@ -65,12 +66,13 @@ class Simulation:
 
 			# Compute the control output
 			control_output = pid.compute(target, position, self.dt)
+			self.feedback_U[i] = control_output
 
 			# Update the simulation object
 			simulationObj.update(control_output, disturbance)
 
 			# Save to the feedback updated position
-			self.feedback[i] = simulationObj.get_position()
+			self.feedback_X[i] = simulationObj.get_position()
 
 
 	def plot(self) -> None:
@@ -84,11 +86,12 @@ class Simulation:
 			None
 		"""
 		plt.figure()
-		plt.plot(self.time, self.disturbance, label='Disturbance')
-		plt.plot(self.time, self.feedback, label='Feedback')
-		plt.plot(self.time, self.target, label='Target', linestyle='--')
+		plt.plot(self.time, self.disturbance, label='D_disturbance', color='black')
+		plt.plot(self.time, self.feedback_X, label='Y_PID', color='orange')
+		plt.plot(self.time, self.target, label='Y_target', linestyle='--', color='red')
+		plt.plot(self.time, self.feedback_U, label='U_PID', color='blue')
 		plt.title('PID Control')
-		plt.xlabel('Time')
+		plt.xlabel('X_time')
 		plt.ylabel('Value')
 		plt.legend()
 		plt.grid()

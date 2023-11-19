@@ -23,8 +23,8 @@ class PID:
 		self.derivative_error: float = 0
 
 		# PID saturation limits
-		self.saturation_max: float = 1
-		self.saturation_min: float = -1
+		self.saturation_max: float = 5
+		self.saturation_min: float = -5
 	
     
 	def compute(self, target: float, position: float, dt: float) -> float:
