@@ -2,6 +2,7 @@ import numpy as np
 from numpy.typing import NDArray
 from matplotlib import pyplot as plt
 
+
 # Local imports
 from PID import PID
 from Systems import *
@@ -26,7 +27,8 @@ class Simulation:
 		self.disturbance = disturbance
 		self.dt = dt
 
-		self.feedback = np.zeros(len(self.time))
+		self.feedback_X = np.zeros(len(self.time))
+		self.feedback_U = np.zeros(len(self.time))
 
 
 	def run(self, simulationObj: BaseSystem, pid: PID) -> None:
@@ -47,12 +49,13 @@ class Simulation:
 
 			# Compute the control output
 			control_output = pid.compute(target, position, self.dt)
+			self.feedback_U[i] = control_output
 
 			# Update the simulation object
 			simulationObj.update(control_output, disturbance)
 
 			# Save to the feedback updated position
-			self.feedback[i] = simulationObj.get_position()
+			self.feedback_X[i] = simulationObj.get_position()
 
 
 	def plot(self) -> None:
@@ -66,11 +69,12 @@ class Simulation:
 			None
 		"""
 		plt.figure()
-		plt.plot(self.time, self.disturbance, label='Disturbance')
-		plt.plot(self.time, self.feedback, label='Feedback')
-		plt.plot(self.time, self.target, label='Target', linestyle='--')
+		plt.plot(self.time, self.disturbance, label='D_disturbance', color='black')
+		plt.plot(self.time, self.feedback_X, label='Y_PID', color='orange')
+		plt.plot(self.time, self.target, label='Y_target', linestyle='--', color='red')
+		plt.plot(self.time, self.feedback_U, label='U_PID', color='blue')
 		plt.title('PID Control')
-		plt.xlabel('Time')
+		plt.xlabel('X_time')
 		plt.ylabel('Value')
 		plt.legend()
 		plt.grid()
@@ -79,15 +83,20 @@ class Simulation:
 
 
 if __name__ == "__main__":
-	dt = 0.01
 
+
+	# Trollley
+	dt = 0.01
 	time = np.arange(0, 100, dt)
-	target = np.ones(len(time))*0.5
+	target = np.ones(len(time))*5
+	target[len(time)//2:] = 6
+
 	disturbance = np.zeros(len(time))
 	# disturbance[4000:4100] = 0.5
 
-	pid = PID(KP=1, KI=0.1, KD=0.1)
-	tr = Trolley(mass=1, friction=0.1, dt=dt)
+	pid = PID(KP=0.5, KI=0.1, KD=0.5)
+	tr = Trolley(mass=2, friction=1, dt=dt)
 	simulation = Simulation(time=time, target=target, disturbance=disturbance, dt=dt)
+	
 	simulation.run(tr, pid)
 	simulation.plot()
