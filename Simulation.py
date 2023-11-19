@@ -1,26 +1,11 @@
 import numpy as np
 from numpy.typing import NDArray
 from matplotlib import pyplot as plt
-from dataclasses import dataclass
-from typing import List
+
 
 # Local imports
 from PID import PID
 from Systems import *
-
-
-@dataclass
-class SimulationInfo:
-	"""
-	Store the simulation data
-	"""
-	time: float
-	target: float
-	disturbance: float
-
-	U: float
-	dUdt: float
-	dU2dt2: float
 
 
 class Simulation:
@@ -44,8 +29,6 @@ class Simulation:
 
 		self.feedback_X = np.zeros(len(self.time))
 		self.feedback_U = np.zeros(len(self.time))
-
-		self.info: List[SimulationInfo] = []
 
 
 	def run(self, simulationObj: BaseSystem, pid: PID) -> None:
