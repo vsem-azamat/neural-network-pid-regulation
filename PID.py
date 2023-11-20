@@ -1,8 +1,9 @@
-
+import torch
+from torch import Tensor
 
 class PID:
 	"""PID controller class"""
-	def __init__(self, KP: float, KI: float, KD: float) -> None:
+	def __init__(self, KP: Tensor, KI: Tensor, KD: Tensor) -> None:
 		"""
 		A PID controller is characterized by three parameters: proportional gain (KP), integral gain (KI), and derivative gain (KD).
 		
@@ -12,22 +13,22 @@ class PID:
             KD (float): derivative gain
 		"""
 		# PID parameters
-		self.KP: float = KP
-		self.KI: float = KI
-		self.KD: float = KD	
+		self.KP: Tensor = KP
+		self.KI: Tensor = KI
+		self.KD: Tensor	= KD
 
         # PID states
-		self.error: float = 0
-		self.error_last: float = 0
-		self.integral_error: float = 0
-		self.derivative_error: float = 0
+		self.error: Tensor = torch.tensor(0.)
+		self.error_last: Tensor = torch.tensor(0.)
+		self.integral_error: Tensor = torch.tensor(0.)
+		self.derivative_error: Tensor = torch.tensor(0.)
 
 		# PID saturation limits
-		self.saturation_max: float = 5
-		self.saturation_min: float = -5
-	
+		self.saturation_max: Tensor = torch.tensor(5.)
+		self.saturation_min: Tensor = torch.tensor(-5.)
+
     
-	def compute(self, target: float, position: float, dt: float) -> float:
+	def compute(self, target: Tensor, position: Tensor, dt: Tensor) -> Tensor:
 		"""
 		Calculate the output of the PID controller
 		
@@ -58,7 +59,7 @@ class PID:
 		return output
 
 
-	def setLims(self, min: float, max: float) -> None:
+	def setLims(self, min: Tensor, max: Tensor) -> None:
 		"""
 		Set the saturation limits for the PID controller
 		
@@ -71,5 +72,4 @@ class PID:
 		"""
 		self.saturation_max = max
 		self.saturation_min = min
-
 

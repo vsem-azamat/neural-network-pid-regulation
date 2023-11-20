@@ -1,7 +1,7 @@
 # Custon
 .vscode/
 plots/
-test*.py
+test*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -1,5 +1,6 @@
-import numpy as np
-from numpy.typing import NDArray
+from hmac import new
+import torch
+from torch import Tensor
 from matplotlib import pyplot as plt
 
 
@@ -9,26 +10,27 @@ from Systems import *
 
 
 class Simulation:
-	def __init__(self, time: NDArray, target: NDArray, disturbance: NDArray, dt: float = 0.01) -> None:
+	def __init__(self, time: Tensor, target: Tensor, disturbance: Tensor, dt: Tensor = torch.tensor(0.01)) -> None:
 		"""
 		Initialize the simulation environment
 
 		Args:
-			time (numpy.ndarray): time array of the simulation
-			target (numpy.ndarray): array of target values
-			disturbance (numpy.ndarray): array of disturbance values
-			dt (float): time step between the current and previous position
+			time (Tensor): time array of the simulation
+			target (Tensor): array of target values
+			disturbance (Tensor): array of disturbance values
+			dt (Tensor): time step between the current and previous position
 
 		Returns:
 			None
 		"""
-		self.time = time
-		self.target = target
-		self.disturbance = disturbance
-		self.dt = dt
+		self.time: Tensor = time
+		self.target: Tensor = target
+		self.disturbance: Tensor = disturbance
+		self.dt: Tensor = dt
 
-		self.feedback_X = np.zeros(len(self.time))
-		self.feedback_U = np.zeros(len(self.time))
+		self.feedback_X = torch.zeros(len(self.time))
+		self.feedback_U = torch.zeros(len(self.time))
+		self.feedback_E = torch.zeros(len(self.time))
 
 
 	def run(self, simulationObj: BaseSystem, pid: PID) -> None:
@@ -55,7 +57,12 @@ class Simulation:
 			simulationObj.update(control_output, disturbance)
 
 			# Save to the feedback updated position
-			self.feedback_X[i] = simulationObj.get_position()
+			new_position = simulationObj.get_position()
+			self.feedback_X[i] =  new_position
+
+			# Compute and save the error
+			error = target - new_position
+			self.feedback_E[i] = error
 
 
 	def plot(self) -> None:
@@ -68,11 +75,17 @@ class Simulation:
 		Returns:
 			None
 		"""
+		time = self.time.cpu().detach().numpy()
+		target = self.target.cpu().detach().numpy()
+		disturbance = self.disturbance.cpu().detach().numpy()
+		feedback_X = self.feedback_X.cpu().detach().numpy()
+		feedback_U = self.feedback_U.cpu().detach().numpy()
+
 		plt.figure()
-		plt.plot(self.time, self.disturbance, label='D_disturbance', color='black')
-		plt.plot(self.time, self.feedback_X, label='Y_PID', color='orange')
-		plt.plot(self.time, self.target, label='Y_target', linestyle='--', color='red')
-		plt.plot(self.time, self.feedback_U, label='U_PID', color='blue')
+		plt.plot(time, target, label='Y_target', linestyle='--', color='red')
+		plt.plot(time, disturbance, label='D_disturbance', color='black')
+		plt.plot(time, feedback_X, label='Y_PID', color='orange')
+		plt.plot(time, feedback_U, label='U_PID', color='blue')
 		plt.title('PID Control')
 		plt.xlabel('X_time')
 		plt.ylabel('Value')
@@ -83,20 +96,24 @@ class Simulation:
 
 
 if __name__ == "__main__":
-
-
 	# Trollley
-	dt = 0.01
-	time = np.arange(0, 100, dt)
-	target = np.ones(len(time))*5
-	target[len(time)//2:] = 6
+	DT = torch.tensor(0.01)
+	TIME = torch.arange(0, 100, DT)
+	TARGET = torch.ones(len(TIME))*5
+	TARGET[TIME>50] = 6
 
-	disturbance = np.zeros(len(time))
+	disturbance = torch.zeros(len(TIME))
 	# disturbance[4000:4100] = 0.5
 
-	pid = PID(KP=0.5, KI=0.1, KD=0.5)
-	tr = Trolley(mass=2, friction=1, dt=dt)
-	simulation = Simulation(time=time, target=target, disturbance=disturbance, dt=dt)
+	KP = torch.tensor(0.5)
+	KI = torch.tensor(0.1)
+	KD = torch.tensor(0.5)
+	pid = PID(KP=KP, KI=KI, KD=KD)
+
+	mass = torch.tensor(2.)
+	friction = torch.tensor(1.)
+	tr = Trolley(mass=mass, friction=friction, dt=DT)
+	simulation = Simulation(time=TIME, target=TARGET, disturbance=disturbance, dt=DT)
 	
 	simulation.run(tr, pid)
 	simulation.plot()

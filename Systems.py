@@ -1,10 +1,13 @@
+import torch
+from torch import Tensor
+
 from abc import ABC, abstractmethod
 from typing import Tuple
 
 
 class BaseSystem(ABC):
 	@abstractmethod
-	def update(self, control_output: float, distrubance: float) -> None:
+	def update(self, control_output: Tensor, distrubance: Tensor) -> None:
 		"""
 		Update the position and velocity of the object
 
@@ -18,7 +21,7 @@ class BaseSystem(ABC):
 		pass
 
 	@abstractmethod
-	def get_position(self) -> float:
+	def get_position(self) -> Tensor:
 		"""
 		Get the position of the object
 
@@ -32,7 +35,7 @@ class BaseSystem(ABC):
 
 
 class Trolley(BaseSystem):
-	def __init__(self, mass: float, friction: float, dt: float) -> None:
+	def __init__(self, mass: Tensor, friction: Tensor, dt: Tensor) -> None:
 		"""
 		Initialize the trolley
 
@@ -44,17 +47,17 @@ class Trolley(BaseSystem):
 		Returns:
 			None
 		"""
-		self.mass: float = mass # kg
-		self.friction: float = friction # N*s/m
-		self.spring_constant: float = 50 # N/m
-		self.dt: float = dt # s
-		self.position: float = 0 # m
-		self.delta_position: float = 0
-		self.velocity: float = 0 # m/s
-		self.F: float = 50 # N
+		self.mass: Tensor = mass # kg
+		self.friction: Tensor = friction # N*s/m
+		self.spring_constant: Tensor = torch.tensor(50.) # N/m
+		self.dt: Tensor = dt # s
+		self.position: Tensor = torch.tensor(0.) # m
+		self.delta_position: Tensor = torch.tensor(0.) # m
+		self.velocity: Tensor = torch.tensor(0.) # m/s
+		self.F: Tensor = torch.tensor(50.) # N
 
 
-	def update(self, control_output: float, distrubance: float = 0) -> None:
+	def update(self, control_output: Tensor, distrubance: Tensor = 0) -> None:
 		"""
 		Update the position and velocity of the trolley
 		
@@ -79,7 +82,7 @@ class Trolley(BaseSystem):
 		self.position = position
 
 
-	def get_position(self) -> float:
+	def get_position(self) -> Tensor:
 		"""
 		Get the position of the trolley
 
@@ -92,22 +95,21 @@ class Trolley(BaseSystem):
 		return self.position
 	
 
-	def get_U(self) -> Tuple[float, float, float]:
+	def get_U(self) -> Tuple[Tensor, Tensor, Tensor]:
 		return self.position, self.position/self.dt, self.position/(self.dt**2)
 
 
 class ContinuousTankHeating(BaseSystem):
-
-	def __init__(self, dt: float) -> None:
-		self.dt: float = dt
-		self.Tf = 300
-		self.T: float = 300
-		self.epsilon: float = 1
-		self.tau: float = 4
-		self.Q: float = 2
+	def __init__(self, dt: Tensor) -> None:
+		self.dt: Tensor = dt
+		self.Tf: Tensor = torch.tensor(300.)
+		self.T: Tensor = torch.tensor(300.)
+		self.epsilon: Tensor = torch.tensor(1.)
+		self.tau: Tensor = torch.tensor(4.)
+		self.Q: Tensor = torch.tensor(2.)
 
 	# TODO: fix the equation of the model
-	def update(self, control_output: float, distrubance: float = 0) -> None:
+	def update(self, control_output: Tensor, distrubance: Tensor = torch.tensor(0.)) -> None:
 		"""
 		Update the position and velocity of the trolley
 		
@@ -126,5 +128,5 @@ class ContinuousTankHeating(BaseSystem):
 		dTdt = 1/(1 + self.epsilon) * (1/self.tau * (self.Tf - self.T) + self.Q * (Tq - self.T))
 		self.T += dTdt * self.dt
 
-	def get_position(self) -> float:
+	def get_position(self) -> Tensor:
 		return self.T
