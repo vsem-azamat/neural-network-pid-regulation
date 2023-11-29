@@ -34,7 +34,7 @@ class BaseSystem(ABC):
 		pass
 
 
-class Trolley(BaseSystem):
+class Trolley:
 	def __init__(self, mass: Tensor, friction: Tensor, dt: Tensor) -> None:
 		"""
 		Initialize the trolley
@@ -47,17 +47,17 @@ class Trolley(BaseSystem):
 		Returns:
 			None
 		"""
-		self.mass: Tensor = mass # kg
-		self.friction: Tensor = friction # N*s/m
-		self.spring_constant: Tensor = torch.tensor(50.) # N/m
-		self.dt: Tensor = dt # s
-		self.position: Tensor = torch.tensor(0.) # m
-		self.delta_position: Tensor = torch.tensor(0.) # m
-		self.velocity: Tensor = torch.tensor(0.) # m/s
-		self.F: Tensor = torch.tensor(50.) # N
+		self.mass: Tensor = torch.tensor(mass, dtype=torch.float32)
+		self.friction: Tensor = torch.tensor(friction, dtype=torch.float32)
+		self.spring_constant: Tensor = torch.tensor(50, dtype=torch.float32)
+		self.dt: Tensor = torch.tensor(dt, dtype=torch.float32)
+		self.position: Tensor = torch.tensor(0, dtype=torch.float32)
+		self.delta_position: Tensor = torch.tensor(0, dtype=torch.float32)
+		self.velocity: Tensor = torch.tensor(0, dtype=torch.float32)
+		self.F: Tensor = torch.tensor(50, dtype=torch.float32)
 
 
-	def update(self, control_output: Tensor, distrubance: Tensor = 0) -> None:
+	def update(self, control_output: Tensor, distrubance: Tensor = torch.tensor(0.)) -> None:
 		"""
 		Update the position and velocity of the trolley
 		
@@ -97,6 +97,21 @@ class Trolley(BaseSystem):
 
 	def get_U(self) -> Tuple[Tensor, Tensor, Tensor]:
 		return self.position, self.position/self.dt, self.position/(self.dt**2)
+	
+
+	def reset(self) -> None:
+		"""
+		Reset the position and velocity of the trolley
+
+		Args:
+			None
+
+		Returns:
+			None
+		"""
+		self.position = torch.tensor(0, dtype=torch.float32)
+		self.velocity = torch.tensor(0, dtype=torch.float32)
+		self.delta_position = torch.tensor(0, dtype=torch.float32)
 
 
 class ContinuousTankHeating(BaseSystem):

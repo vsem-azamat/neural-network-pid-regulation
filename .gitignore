@@ -2,6 +2,7 @@
 .vscode/
 plots/
 test*
+*bad*.pth
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

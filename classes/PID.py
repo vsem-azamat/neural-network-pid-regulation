@@ -1,5 +1,7 @@
 import torch
-from torch import Tensor
+from torch import Tensor, device
+
+from typing import Optional
 
 class PID:
 	"""PID controller class"""
@@ -12,10 +14,11 @@ class PID:
             KI (float): integral gain
             KD (float): derivative gain
 		"""
+
 		# PID parameters
-		self.KP: Tensor = KP
-		self.KI: Tensor = KI
-		self.KD: Tensor	= KD
+		self.KP: Tensor = torch.tensor(KP)
+		self.KI: Tensor = torch.tensor(KI)
+		self.KD: Tensor = torch.tensor(KD)
 
         # PID states
 		self.error: Tensor = torch.tensor(0.)
@@ -24,9 +27,9 @@ class PID:
 		self.derivative_error: Tensor = torch.tensor(0.)
 
 		# PID saturation limits
-		self.saturation_max: Tensor = torch.tensor(5.)
-		self.saturation_min: Tensor = torch.tensor(-5.)
-
+		self.saturation_max: Optional[Tensor] = torch.tensor(5.)
+		self.saturation_min: Optional[Tensor] = torch.tensor(-5.)
+	
     
 	def compute(self, target: Tensor, position: Tensor, dt: Tensor) -> Tensor:
 		"""
@@ -52,14 +55,14 @@ class PID:
 			self.KI * self.integral_error + \
 			self.KD * self.derivative_error
 
-		if output > self.saturation_max and self.saturation_max:
+		if self.saturation_max and output > self.saturation_max:
 			output = self.saturation_max
-		elif output < self.saturation_min and self.saturation_min:
+		elif self.saturation_min and output < self.saturation_min:
 			output = self.saturation_min
 		return output
 
 
-	def setLims(self, min: Tensor, max: Tensor) -> None:
+	def setLims(self, min: Optional[Tensor], max: Optional[Tensor]) -> None:
 		"""
 		Set the saturation limits for the PID controller
 		

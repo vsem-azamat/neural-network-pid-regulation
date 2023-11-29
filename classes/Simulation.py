@@ -1,12 +1,10 @@
-from hmac import new
 import torch
 from torch import Tensor
 from matplotlib import pyplot as plt
 
-
 # Local imports
-from PID import PID
-from Systems import *
+from classes.PID import PID
+from classes.Systems import *
 
 
 class Simulation:
