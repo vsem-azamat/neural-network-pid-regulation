@@ -1,11 +1,11 @@
-import tqdm
+from tqdm import tqdm_notebook, tqdm
 import torch
 from torch import Tensor
 import matplotlib.pyplot as plt
 
 # Local imports
 from classes.PID import PID
-from classes.Systems import Trolley
+from classes.Systems import BaseSystem
 from classes.Simulation import Simulation
 
 
@@ -16,19 +16,29 @@ class SimulationNN(Simulation):
 		self.custom_loss = None
 		self.optimizer = None
 
-		self.feedback_Kp = torch.zeros(len(time))
-		self.feedback_Ki = torch.zeros(len(time))
-		self.feedback_Kd = torch.zeros(len(time))
+		self.feedback_L = torch.zeros(len(time))
+
+		self.feedback_Kp = torch.ones(len(time))
+		self.feedback_Ki = torch.ones(len(time))
+		self.feedback_Kd = torch.ones(len(time))
+
+		# self.feedback_Kp[0] = torch.tensor(2)
+		# self.feedback_Ki[0] = torch.tensor(0.1)
+		# self.feedback_Kd[0] = torch.tensor(0.5)
 
 
-	def run(self, trolley: Trolley, pid: PID) -> None:
+	def run(self, trolley: BaseSystem, pid: PID) -> None:
+		"""
+		Run the simulation
+		"""
 
 		# Check if the model, loss function, and optimizer are defined
 		if self.model is None or self.custom_loss is None or self.optimizer is None:
 			raise Exception("Model, loss function, or optimizer is not defined")
 
 		# This cycle like the one epoc in the training
-		with tqdm.tqdm(total=len(self.time)-1) as pbar:
+		# with tqdm.tqdm(total=len(self.time)-1) as pbar:
+		with tqdm_notebook(total=len(self.time)-1) as pbar:
 			pbar.colour = 'green'
 			for i in range(1, len(self.time)):
 				# Get data from the previous step
@@ -42,6 +52,8 @@ class SimulationNN(Simulation):
 				pid.KD = self.feedback_Kd[i-1]
 				control_output = pid.compute(target, position, self.dt)
 				self.feedback_U[i] = control_output
+				if control_output > 100000:
+					break
 
 				# Update the trolley
 				trolley.update(control_output, disturbance)
@@ -50,23 +62,30 @@ class SimulationNN(Simulation):
 				new_position = trolley.get_position()
 				self.feedback_X[i] = new_position
 
-				# Reset gradient
-				self.optimizer.zero_grad()
-
 				# Build input vector X
 				U = self.feedback_U[i]
 				dUdKP = torch.abs((self.feedback_U[i] - self.feedback_U[i-1]) / (self.feedback_Kp[i] - self.feedback_Kp[i-1]))
 				dUdKI = torch.abs((self.feedback_U[i] - self.feedback_U[i-1]) / (self.feedback_Ki[i] - self.feedback_Ki[i-1]))
 				dUdKD = torch.abs((self.feedback_U[i] - self.feedback_U[i-1]) / (self.feedback_Kd[i] - self.feedback_Kd[i-1]))
+
+				# Clamp the values for inf and nan
+				dUdKP = torch.clamp(dUdKP, 0, 100000)
+				dUdKI = torch.clamp(dUdKI, 0, 100000)
+				dUdKD = torch.clamp(dUdKD, 0, 100000)
 		
 				# Vector of X
-				input_X = torch.tensor([U, dUdKP, dUdKI, dUdKD], requires_grad=True)
+				# input_X = torch.tensor([U, dUdKP, dUdKI, dUdKD], requires_grad=True)
+				E = self.feedback_E[i-1]
+
+				input_X = torch.tensor([E, U, pid.KP, pid.KI, pid.KD], requires_grad=True)
 
 				# Predict the next coeeficients of the PID controller
 				predicted_Y = self.model(input_X)
-				Kp = predicted_Y[0].item()
-				Ki = predicted_Y[1].item()
-				Kd = predicted_Y[2].item()
+
+				# Get the coefficients
+				Kp = predicted_Y[0]
+				Ki = predicted_Y[1]
+				Kd = predicted_Y[2]
 
 				# Save the coefficients
 				self.feedback_Kp[i] = Kp
@@ -81,16 +100,20 @@ class SimulationNN(Simulation):
 				Kd_t = self.feedback_Kd[i]
 				Kd_t_1 = self.feedback_Kd[i-1]
 
-				vector_K = torch.tensor([Kp_t, Kp_t_1, Ki_t, Ki_t_1, Kd_t, Kd_t_1], dtype=torch.float32, requires_grad=True)
+				vector_K = torch.tensor([Kp_t, Kp_t_1, Ki_t, Ki_t_1, Kd_t, Kd_t_1], requires_grad=True)
 
 				# Calculate the error
 				E_t = target - new_position
 				E_t_1 = self.feedback_E[i-1]
 				self.feedback_E[i] = E_t
-				vector_E = torch.tensor([E_t, E_t_1], dtype=torch.float32, requires_grad=True)
+				vector_E = torch.tensor([E_t, E_t_1], requires_grad=True)
 				
 				# Calculate the loss
 				loss = self.custom_loss(vector_K, vector_E, self.dt)
+				self.feedback_L[i] = loss
+				
+				# Reset gradient
+				self.optimizer.zero_grad()
 
 				# Backpropagation
 				loss.backward()
@@ -100,7 +123,9 @@ class SimulationNN(Simulation):
 
 				# Update the progress bar
 				pbar.update(1)
-				pbar.set_description(f"Loss: {loss.item():.4f} | Error: {self.feedback_E[i]:.4f}, X_targ: {target:.4f} | U: {U:.4f} | Kp: {Kp:.4f}, Ki: {Ki:.4f}, Kd: {Kd:.4f}")
+				# Set the description 
+				pbar.set_description(f"L: {loss.item():.4f} | E: {self.feedback_E[i]:.4f}, X_: {target:.4f} | U: {U:.4f} | Kp: {Kp:.4f}, Ki: {Ki:.4f}, Kd: {Kd:.4f}")
+
 
 
 	def plot_K(self) -> None:
@@ -110,12 +135,6 @@ class SimulationNN(Simulation):
 		feedback_Kp = self.feedback_Kp.cpu().detach().numpy()
 		feedback_Ki = self.feedback_Ki.cpu().detach().numpy()
 		feedback_Kd = self.feedback_Kd.cpu().detach().numpy()
-
-		print(self.time)
-		print(self.feedback_Kp)
-		print(self.feedback_Ki)
-		print(self.feedback_Kd)
-
 
 		# Plot the coefficients
 		fig, ax = plt.subplots(1, 3, figsize=(15, 5))
@@ -140,6 +159,6 @@ class SimulationNN(Simulation):
 	def reset(self) -> None:
 		self.feedback_X = torch.zeros(len(self.time))
 		self.feedback_U = torch.zeros(len(self.time))
-		self.feedback_Kp = torch.zeros(len(self.time))
-		self.feedback_Ki = torch.zeros(len(self.time))
-		self.feedback_Kd = torch.zeros(len(self.time))
+		# self.feedback_Kp = torch.zeros(len(self.time))
+		# self.feedback_Ki = torch.zeros(len(self.time))
+		# self.feedback_Kd = torch.zeros(len(self.time))

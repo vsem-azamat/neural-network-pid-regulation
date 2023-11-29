@@ -3,6 +3,7 @@
 plots/
 test*
 *bad*.pth
+/*.pth
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

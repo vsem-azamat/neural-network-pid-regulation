@@ -1,5 +1,5 @@
 import torch
-from torch import Tensor, device
+from torch import Tensor
 
 from typing import Optional
 
@@ -27,8 +27,8 @@ class PID:
 		self.derivative_error: Tensor = torch.tensor(0.)
 
 		# PID saturation limits
-		self.saturation_max: Optional[Tensor] = torch.tensor(5.)
-		self.saturation_min: Optional[Tensor] = torch.tensor(-5.)
+		self.saturation_max: Optional[Tensor] = torch.tensor(20.)
+		self.saturation_min: Optional[Tensor] = torch.tensor(-20.)
 	
     
 	def compute(self, target: Tensor, position: Tensor, dt: Tensor) -> Tensor:

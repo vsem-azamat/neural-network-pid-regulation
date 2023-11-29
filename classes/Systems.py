@@ -34,7 +34,7 @@ class BaseSystem(ABC):
 		pass
 
 
-class Trolley:
+class Trolley(BaseSystem):
 	def __init__(self, mass: Tensor, friction: Tensor, dt: Tensor) -> None:
 		"""
 		Initialize the trolley
