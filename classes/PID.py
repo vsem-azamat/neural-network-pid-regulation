@@ -16,9 +16,9 @@ class PID:
 		"""
 
 		# PID parameters
-		self.KP: Tensor = torch.tensor(KP)
-		self.KI: Tensor = torch.tensor(KI)
-		self.KD: Tensor = torch.tensor(KD)
+		self.Kp: Tensor = torch.tensor(KP)
+		self.Ki: Tensor = torch.tensor(KI)
+		self.Kd: Tensor = torch.tensor(KD)
 
         # PID states
 		self.error: Tensor = torch.tensor(0.)
@@ -45,15 +45,15 @@ class PID:
 		"""
 		# Calculate the errors
 		self.error = target - position # error = target - current
-		self.integral_error += self.error * dt #error build up over time
+		self.integral_error += self.error * dt.requires_grad #error build up over time
 		self.derivative_error = (self.error - self.error_last) / dt #find the derivative of the error (how the error changes with time)
 		self.error_last = self.error # update the error
 		
 		# Calculate the output
 		output = \
-			self.KP * self.error + \
-			self.KI * self.integral_error + \
-			self.KD * self.derivative_error
+			self.Kp * self.error + \
+			self.Ki * self.integral_error + \
+			self.Kd * self.derivative_error
 
 		if self.saturation_max and output > self.saturation_max:
 			output = self.saturation_max

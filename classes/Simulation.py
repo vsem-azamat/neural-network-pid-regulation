@@ -26,7 +26,7 @@ class Simulation:
 		self.disturbance: Tensor = disturbance
 		self.dt: Tensor = dt
 
-		self.feedback_X = torch.zeros(len(self.time))
+		self.feedback_Y = torch.zeros(len(self.time))
 		self.feedback_U = torch.zeros(len(self.time))
 		self.feedback_E = torch.zeros(len(self.time))
 
@@ -52,11 +52,11 @@ class Simulation:
 			self.feedback_U[i] = control_output
 
 			# Update the simulation object
-			simulationObj.update(control_output, disturbance)
+			simulationObj.apply_control(control_output, disturbance)
 
 			# Save to the feedback updated position
 			new_position = simulationObj.get_position()
-			self.feedback_X[i] =  new_position
+			self.feedback_Y[i] =  new_position
 
 			# Compute and save the error
 			error = target - new_position
@@ -76,7 +76,7 @@ class Simulation:
 		time = self.time.cpu().detach().numpy()
 		target = self.target.cpu().detach().numpy()
 		disturbance = self.disturbance.cpu().detach().numpy()
-		feedback_X = self.feedback_X.cpu().detach().numpy()
+		feedback_X = self.feedback_Y.cpu().detach().numpy()
 		feedback_U = self.feedback_U.cpu().detach().numpy()
 
 		plt.figure()

@@ -7,7 +7,7 @@ from typing import Tuple
 
 class BaseSystem(ABC):
 	@abstractmethod
-	def update(self, control_output: Tensor, distrubance: Tensor) -> None:
+	def apply_control(self, control_output: Tensor, distrubance: Tensor) -> None:
 		"""
 		Update the position and velocity of the object
 
@@ -47,19 +47,19 @@ class Trolley(BaseSystem):
 		Returns:
 			None
 		"""
-		self.mass: Tensor = torch.tensor(mass, dtype=torch.float32)
-		self.friction: Tensor = torch.tensor(friction, dtype=torch.float32)
-		self.spring_constant: Tensor = torch.tensor(50, dtype=torch.float32)
-		self.dt: Tensor = torch.tensor(dt, dtype=torch.float32)
-		self.position: Tensor = torch.tensor(0, dtype=torch.float32)
-		self.delta_position: Tensor = torch.tensor(0, dtype=torch.float32)
-		self.velocity: Tensor = torch.tensor(0, dtype=torch.float32)
-		self.F: Tensor = torch.tensor(50, dtype=torch.float32)
+		self.mass: Tensor = torch.tensor(mass)
+		self.friction: Tensor = torch.tensor(friction)
+		self.spring_constant: Tensor = torch.tensor(50.)
+		self.dt: Tensor = torch.tensor(dt)
+		self.position: Tensor = torch.tensor(0.)
+		self.delta_position: Tensor = torch.tensor(0.)
+		self.velocity: Tensor = torch.tensor(0.)
+		self.F: Tensor = torch.tensor(50.)
 
 
-	def update(self, control_output: Tensor, distrubance: Tensor = torch.tensor(0.)) -> None:
+	def apply_control(self, control_output: Tensor, distrubance: Tensor = torch.tensor(0.)) -> None:
 		"""
-		Update the position and velocity of the trolley
+		Update the position and velocity of the trolley based on the control output
 		
 		Args:
 			TODO: select best unit for the demonstration
