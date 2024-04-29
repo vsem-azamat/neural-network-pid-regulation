@@ -1,10 +1,10 @@
 import torch
 from torch import Tensor
-from matplotlib import pyplot as plt
+import matplotlib.pyplot as plt
 
 # Local imports
-from classes.PID import PID
-from classes.Systems import *
+from classes.pid import PID
+from systems.base import BaseSystem
 
 
 class Simulation:

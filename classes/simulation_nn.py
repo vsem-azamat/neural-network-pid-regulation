@@ -1,17 +1,14 @@
-from tqdm import tqdm_notebook, tqdm
+# Pip imports
 import torch
 from torch import Tensor
-from torch.optim import Optimizer
 from torch.nn import Module
-
-import matplotlib.pyplot as plt
-
-from typing import Optional
+from torch.optim import Optimizer
+from tqdm import tqdm_notebook
 
 # Local imports
-from classes.PID import PID
-from classes.Systems import BaseSystem
-from classes.Simulation import KP, Simulation
+from classes.pid import PID
+from systems.trolley import BaseSystem
+from classes.simulation import Simulation
 
 
 class SimulationNN(Simulation):
@@ -82,7 +79,7 @@ class SimulationNN(Simulation):
 				self.feedback_Y[i] = Y_new
 
 				# ------------------- Build input X for model ------------------- #
-				predicted_Y = self.model(input_X)
+				predicted_Y = self.model(input_X)	
 
 				# Get the coefficients
 				Kp = predicted_Y[0]
@@ -139,12 +136,6 @@ class SimulationNN(Simulation):
 		KI = self.feedback_Ki[self.current_idx]
 		KD = self.feedback_Kd[self.current_idx]
 		
-		
-		
-		
-		
-
-
 
 	def plot_K(self) -> None:
 
