@@ -9,49 +9,40 @@ class PID:
 		self.Kd = initial_KD
 
         # PID states
-		self.error = torch.tensor(0.)
-		self.error_last = torch.tensor(0.)
-		self.integral_error = torch.tensor(0.)
-		self.derivative_error = torch.tensor(0.)
+		self.e_k = torch.tensor(0.)
+		self.e_k_1 = torch.tensor(0.)
+		self.e_k_2 = torch.tensor(0.)
+		self.u_k_1 = torch.tensor(0.)
 
 		# PID saturation limits
-		self.saturation_max = torch.tensor(500.)
-		self.saturation_min = torch.tensor(-500.)
+		self.saturation_max = torch.tensor(10000.)
+		self.saturation_min = torch.tensor(-10000.)
 
-		# PID
-	
 
-	# Function to update PID gains based on external values
 	def update_gains(self, new_Kp: Tensor, new_Ki: Tensor, new_Kd: Tensor) -> None:
 		self.Kp = new_Kp
 		self.Ki = new_Ki
 		self.Kd = new_Kd
 
 
-	def compute(self, target: Tensor, position: Tensor, dt: Tensor) -> Tensor:
-		"""
-		Calculate the output of the PID controller
-		
-		Args:
-            target (float): target value
-			position (float): current value
-			dt (float): time step between the current and previous position
-			
-        Returns:
-            float: output of the PID controller
-		"""
-		# Calculate the errors
-		self.error = target - position
-		self.integral_error += self.error * dt
-		self.derivative_error = (self.error - self.error_last) / dt #find the derivative of the error (how the error changes with time)
-		self.error_last = self.error # update the error
+	def compute(self, error: Tensor, dt: Tensor) -> Tensor:
+		# Store the errors
+		self.e_k = error
+		self.e_k_1 = self.e_k
+		self.e_k_2 = self.e_k_1
 		
 		# Calculate the output
-		output = \
-			self.Kp * self.error.detach() + \
-			self.Ki * self.integral_error.detach() + \
-			self.Kd * self.derivative_error.detach()
+		u_k = \
+			self.u_k_1 + \
+			self.Kp * (self.e_k - self.e_k_1) + \
+			self.Ki * self.e_k * dt + \
+			self.Kd * ((self.e_k - self.e_k_1) - (self.e_k_1 - self.e_k_2)) / dt
+		self.u_k_1 = u_k
 
-		# return output
-		return torch.clamp(output, self.saturation_min, self.saturation_max)
-  
+		return torch.clamp(u_k, self.saturation_min, self.saturation_max)
+
+
+	def set_limits(self, max_limit: Tensor, min_limit: Tensor) -> None:
+		self.saturation_max = max_limit
+		self.saturation_min = min_limit
+
