@@ -45,6 +45,7 @@ class PID:
 
 
 	def set_limits(self, max_limit: Tensor, min_limit: Tensor) -> None:
+		assert max_limit > min_limit, "Max limit must be greater than min limit"
 		self.saturation_max = max_limit
 		self.saturation_min = min_limit
 
