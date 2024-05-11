@@ -15,8 +15,8 @@ class PID:
 		self.u_k_1 = torch.tensor(0.)
 
 		# PID saturation limits
-		self.saturation_max = torch.tensor(10000.)
-		self.saturation_min = torch.tensor(-10000.)
+		self.saturation_max = None
+		self.saturation_min = None
 
 
 	def update_gains(self, new_Kp: Tensor, new_Ki: Tensor, new_Kd: Tensor) -> None:
@@ -39,7 +39,9 @@ class PID:
 			self.Kd * ((self.e_k - self.e_k_1) - (self.e_k_1 - self.e_k_2)) / dt
 		self.u_k_1 = u_k
 
-		return torch.clamp(u_k, self.saturation_min, self.saturation_max)
+		if isinstance(self.saturation_max, Tensor) and isinstance(self.saturation_min, Tensor):
+			return torch.clamp(u_k, self.saturation_min, self.saturation_max)
+		return u_k
 
 
 	def set_limits(self, max_limit: Tensor, min_limit: Tensor) -> None:
