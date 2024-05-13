@@ -26,7 +26,6 @@ class Trolley(BaseSystem):
 		self.position = torch.tensor(0.)
 		self.delta_position = torch.tensor(0.)
 		self.velocity = torch.tensor(0.)
-		self.F = torch.tensor(50.)
 
 
 	def apply_control(self, control_output: Tensor, distrubance: Tensor = torch.tensor(0.)) -> Tensor:
