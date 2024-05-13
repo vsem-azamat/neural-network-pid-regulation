@@ -90,28 +90,3 @@ class Simulation:
 		plt.legend()
 		plt.grid()
 		plt.show()
-
-
-
-if __name__ == "__main__":
-	# Trollley
-	DT = torch.tensor(0.01)
-	TIME = torch.arange(0, 100, DT)
-	TARGET = torch.ones(len(TIME))*5
-	TARGET[TIME>50] = 6
-
-	disturbance = torch.zeros(len(TIME))
-	# disturbance[4000:4100] = 0.5
-
-	KP = torch.tensor(0.5)
-	KI = torch.tensor(0.1)
-	KD = torch.tensor(0.5)
-	pid = PID(KP=KP, KI=KI, KD=KD)
-
-	mass = torch.tensor(2.)
-	friction = torch.tensor(1.)
-	tr = Trolley(mass=mass, friction=friction, dt=DT)
-	simulation = Simulation(time=TIME, target=TARGET, disturbance=disturbance, dt=DT)
-	
-	simulation.run(tr, pid)
-	simulation.plot()
