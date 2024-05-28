@@ -1,7 +1,7 @@
 import torch
 from torch import Tensor
 
-from systems.base import BaseSystem
+from .base import BaseSystem
 
 
 
