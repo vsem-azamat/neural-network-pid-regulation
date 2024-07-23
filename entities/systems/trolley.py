@@ -26,6 +26,7 @@ class Trolley(BaseSystem):
 		self.position = torch.tensor(0.)
 		self.delta_position = torch.tensor(0.)
 		self.velocity = torch.tensor(0.)
+		self.acceleration = torch.tensor(0.)
 
 
 	def apply_control(self, control_output: Tensor, distrubance: Tensor = torch.tensor(0.)) -> Tensor:
@@ -41,11 +42,11 @@ class Trolley(BaseSystem):
 		"""
 		assert control_output is not None, "Control output is None"
 		F = control_output
-		acceleration = F / self.mass - \
+		self.acceleration = F / self.mass - \
 			self.friction * self.velocity.detach() / self.mass - \
 			self.spring * self.position.detach() / self.mass - \
 			distrubance / self.mass
-		self.velocity = self.velocity.detach() + acceleration * self.dt
+		self.velocity = self.velocity.detach() + self.acceleration * self.dt
 		self.position = self.position.detach() + self.velocity * self.dt
 		return self.position
 
