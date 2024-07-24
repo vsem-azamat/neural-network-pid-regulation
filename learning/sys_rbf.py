@@ -4,20 +4,10 @@ import torch.optim as optim
 import numpy as np
 import matplotlib.pyplot as plt
 
+from utils.normalizer import Normalizer
 from models.sys_rbf import SystemRBFModel
 from entities.systems.trolley import Trolley
 
-
-class Normalizer:
-    def __init__(self, data):
-        self.mean = data.mean(dim=0)
-        self.std = data.std(dim=0, unbiased=False)
-
-    def normalize(self, data):
-        return (data - self.mean) / (self.std + 1e-8)
-
-    def denormalize(self, data):
-        return data * (self.std + 1e-8) + self.mean
 
 def generate_training_data(trolley, num_samples=2000):  # Increased data samples
     X = torch.zeros((num_samples, 4))  # [position, velocity, acceleration, control_input]
@@ -139,8 +129,10 @@ if __name__ == "__main__":
     rbf_model = SystemRBFModel(hidden_features=20)  # Further increased hidden features
     losses, X_normalizer, y_normalizer = train_rbf_model(rbf_model, trolley, num_epochs=500, learning_rate=0.001)  # Increased epochs
 
-    # Save the trained model
-    torch.save(rbf_model.state_dict(), 'rbf_model.pth')
+    # Save the trained model and normalizers
+    from utils.save_load import save_model, save_pickle
+    save_model(rbf_model, 'sys_rbf_trolley.pth')
+    save_pickle((X_normalizer, y_normalizer), 'sys_rbf_normalizers.pkl')
 
     # Plot training loss
     plot_training_loss(losses)
