@@ -9,8 +9,7 @@ from models.pid_lstm import LSTMAdaptivePID
 from .utils import calculate_angle_2p
 from learning.pid_lstm import custom_loss, plot_simulation_results
 
-# Assuming the generate_training_data and train_rbf_model functions are as defined in sys_rbf.py
-def run_simulation(trolley, pid, lstm_model, rbf_model, X_normalizer, y_normalizer, setpoint, steps, dt, train=True):
+def run_simulation(trolley, pid, lstm_model, rbf_model, X_normalizer, y_normalizer, setpoints, steps, dt, train=True):
     error_history = []
     rbf_predictions = []
     time_points, positions, control_outputs = [], [], []
@@ -19,8 +18,17 @@ def run_simulation(trolley, pid, lstm_model, rbf_model, X_normalizer, y_normaliz
     losses = []
     hidden = None
 
+    current_setpoint_idx = 0
+    steps_per_setpoint = steps // len(setpoints)
+
     for step in range(steps):
         current_time = step * dt.item()
+        
+        # Change setpoint at intervals
+        if step % steps_per_setpoint == 0 and step > 0:
+            current_setpoint_idx = (current_setpoint_idx + 1) % len(setpoints)
+        
+        setpoint = setpoints[current_setpoint_idx]
         current_position = trolley.get_position()
         error = setpoint - current_position
 
@@ -57,7 +65,7 @@ def run_simulation(trolley, pid, lstm_model, rbf_model, X_normalizer, y_normaliz
 
         if train and step % 10 == 0 and step > 0:
             optimizer.zero_grad()
-            sequence_length = min(100, len(error_history))
+            sequence_length = min(200, len(error_history))
             input_sequence = torch.tensor([
                 error_history[-sequence_length:],
                 rbf_predictions[-sequence_length:]
@@ -97,29 +105,36 @@ if __name__ == "__main__":
     optimizer = optim.SGD(lstm_model.parameters(), lr=0.0005, momentum=0.9)
 
     # Load train the RBF model and normalizers 
-    from utils.save_load import load_model, load_pickle
+    from utils.save_load import load_model, load_pickle, save_model
     rbf_model = load_model(SystemRBFModel(hidden_features=20), 'sys_rbf_trolley.pth')
     X_normalizer, y_normalizer = load_pickle('sys_rbf_normalizers.pkl')
 
     # Training phase
     print("Training phase:")
-    setpoint_train = torch.rand(1) * 10.0 + 1.0 # Random setpoint between 1.0 and 11.0
     epoch_results = []
 
     for epoch in range(num_epochs):
         print(f"Epoch {epoch + 1}/{num_epochs}")
         trolley.reset()
-        train_results = run_simulation(trolley, pid, lstm_model, rbf_model, X_normalizer, y_normalizer, setpoint_train, train_steps, dt, train=True)
+        
+        # Generate 3 random setpoints for each epoch
+        setpoints = [torch.rand(1) * 10.0 + 1.0 for _ in range(3)]  # Random setpoints between 1.0 and 11.0
+        print(f"Setpoints for this epoch: {[sp.item() for sp in setpoints]}")
+        
+        train_results = run_simulation(trolley, pid, lstm_model, rbf_model, X_normalizer, y_normalizer, setpoints, train_steps, dt, train=True)
         epoch_results.append(train_results)
+
+    # Save the trained LSTM model
+    save_model(lstm_model, 'pid_lstm_trolley.pth')
 
     # Validation phase
     print("\nValidation phase:")
     trolley.reset()
     setpoint_val = torch.tensor(1.5)
-    val_results = run_simulation(trolley, pid, lstm_model, rbf_model, X_normalizer, y_normalizer, setpoint_val, validation_steps, dt, train=False)
+    val_results = run_simulation(trolley, pid, lstm_model, rbf_model, X_normalizer, y_normalizer, [setpoint_val], validation_steps, dt, train=False)
 
     # Plot results
-    plot_simulation_results(epoch_results, val_results, setpoint_train, setpoint_val)
+    plot_simulation_results(epoch_results, val_results, setpoints[-1], setpoint_val)
 
     # Print final results
     final_train_results = epoch_results[-1]
