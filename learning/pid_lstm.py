@@ -178,13 +178,6 @@ if __name__ == "__main__":
     lstm_model = LSTMAdaptivePID(input_size, hidden_size, output_size)
     optimizer = optim.SGD(lstm_model.parameters(), lr=0.0005, momentum=0.9)
 
-    # # Visualize the LSTM model
-    # dummy_input = torch.randn(1, 1, input_size)
-    # dummy_output, _ = lstm_model(dummy_input)
-    # model_graph = make_dot(dummy_output, params=dict(lstm_model.named_parameters()))
-    # model_graph.render("lstm_model_graph", format="png", cleanup=True)
-    # print("LSTM model graph saved as 'lstm_model_graph.png'")
-
     # Training phase
     print("Training phase:")
     setpoint_train = torch.rand(1) * 5.0 + 1.0  # Random setpoint between 1.0 and 6.0
@@ -195,6 +188,9 @@ if __name__ == "__main__":
         trolley.reset()
         train_results = run_simulation(trolley, pid, lstm_model, setpoint_train, train_steps, dt, train=True)
         epoch_results.append(train_results)
+
+    # Save the trained LSTM model
+    torch.save(lstm_model.state_dict(), "pid_lstm_trolley.pth")
 
     # Validation phase
     print("\nValidation phase:")
