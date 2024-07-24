@@ -43,7 +43,7 @@ def run_simulation(trolley, pid, lstm_model, setpoint, steps, dt, train=True):
 
     for step in range(steps):
         current_time = step * dt.item()
-        current_position = trolley.get_position()
+        current_position = trolley.get_state()
         error = setpoint - current_position
         
         lstm_input = torch.tensor([error.item()]).unsqueeze(0).unsqueeze(0)

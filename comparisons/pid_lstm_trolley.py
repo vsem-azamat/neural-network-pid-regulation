@@ -17,7 +17,7 @@ def compare_controllers(trolley, lstm_regulator, pid, rbf_model, X_normalizer, y
         
         for step in range(steps):
             current_time = step * dt.item()
-            current_position = trolley.get_position()
+            current_position = trolley.get_state()
             error = setpoint - current_position
 
             if lstm_regulator and step >= warm_up_steps:

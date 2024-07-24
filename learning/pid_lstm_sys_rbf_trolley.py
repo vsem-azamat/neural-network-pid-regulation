@@ -7,7 +7,7 @@ from models.sys_rbf import SystemRBFModel
 from models.pid_lstm import LSTMAdaptivePID
 
 from .utils import calculate_angle_2p
-from learning.pid_lstm import custom_loss, plot_simulation_results
+from learning.pid_lstm_trolley import custom_loss, plot_simulation_results
 
 def run_simulation(trolley, pid, lstm_model, rbf_model, X_normalizer, y_normalizer, setpoints, steps, dt, train=True):
     error_history = []
@@ -29,7 +29,7 @@ def run_simulation(trolley, pid, lstm_model, rbf_model, X_normalizer, y_normaliz
             current_setpoint_idx = (current_setpoint_idx + 1) % len(setpoints)
         
         setpoint = setpoints[current_setpoint_idx]
-        current_position = trolley.get_position()
+        current_position = trolley.get_state()
         error = setpoint - current_position
 
         # Prepare the input for the RBF model

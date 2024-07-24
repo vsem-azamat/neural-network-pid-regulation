@@ -51,7 +51,7 @@ class Trolley(BaseSystem):
 		return self.position
 
 
-	def get_position(self) -> Tensor:
+	def get_state(self) -> Tensor:
 		return self.position
 
 
