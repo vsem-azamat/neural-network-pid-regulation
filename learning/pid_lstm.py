@@ -1,4 +1,3 @@
-import math
 import torch
 import torch.optim as optim
 import matplotlib.pyplot as plt
@@ -7,10 +6,8 @@ from entities.pid import PID
 from models.pid_lstm import LSTMAdaptivePID
 from entities.systems.trolley import Trolley
 from torchviz import make_dot
+from .utils import calculate_angle_2p
 
-
-def calculate_angle_2p(pos1, pos2) -> float:
-    return math.atan2(pos2[1] - pos1[1], pos2[0] - pos1[0]) * 180 / math.pi
 
 def custom_loss(position, setpoint, control_output, pid_params, time_points, alpha=0.7, beta=0.01, gamma=0.2, delta=0.1):
     tracking_error = torch.mean((position - setpoint) ** 2)
@@ -36,6 +33,7 @@ def custom_loss(position, setpoint, control_output, pid_params, time_points, alp
     
     return alpha * tracking_error + (1 - alpha - gamma - delta) * control_effort + beta * params_regularization + gamma * direction_penalty + delta * overshoot
 
+
 def run_simulation(trolley, pid, lstm_model, setpoint, steps, dt, train=True):
     time_points, positions, control_outputs = [], [], []
     kp_values, ki_values, kd_values = [], [], []
@@ -47,11 +45,9 @@ def run_simulation(trolley, pid, lstm_model, setpoint, steps, dt, train=True):
         current_time = step * dt.item()
         current_position = trolley.get_position()
         error = setpoint - current_position
-        integral_error = torch.sum(torch.tensor(positions) - setpoint) * dt if positions else torch.tensor(0.0)
-        derivative_error = (error - (positions[-1] - setpoint if positions else torch.tensor(0.0))) / dt
         
-        lstm_input = torch.tensor([error.item(), integral_error.item(), derivative_error.item(), current_position.item()]).unsqueeze(0).unsqueeze(0)
-        
+        lstm_input = torch.tensor([error.item()]).unsqueeze(0).unsqueeze(0)
+
         pid_params, hidden = lstm_model(lstm_input, hidden)
         kp, ki, kd = pid_params[0] * 5
         
@@ -73,12 +69,7 @@ def run_simulation(trolley, pid, lstm_model, setpoint, steps, dt, train=True):
         if train and step % 10 == 0 and step > 0:
             optimizer.zero_grad()
             sequence_length = min(100, len(positions))
-            input_sequence = torch.tensor([
-                positions[-sequence_length:],
-                control_outputs[-sequence_length:],
-                kp_values[-sequence_length:],
-                ki_values[-sequence_length:]
-            ]).t().unsqueeze(0)
+            input_sequence = torch.tensor([positions[-sequence_length:]]).t().unsqueeze(0)
             
             pid_params, _ = lstm_model(input_sequence)
             loss = custom_loss(
@@ -95,7 +86,7 @@ def run_simulation(trolley, pid, lstm_model, setpoint, steps, dt, train=True):
 
     return time_points, positions, control_outputs, kp_values, ki_values, kd_values, angle_history, losses
 
-def plot_simulation_results(epoch_results, validation_results):
+def plot_simulation_results(epoch_results, validation_results, setpoint_train, setpoint_val):
     fig, axs = plt.subplots(5, 2, figsize=(20, 30))
     fig.suptitle('Adaptive LSTM-PID Trolley Control Simulation', fontsize=16)
 
@@ -127,8 +118,6 @@ def plot_simulation_results(epoch_results, validation_results):
     axs[2, 0].grid()
 
     axs[3, 0].set_ylabel('Angle (degrees)')
-    axs[3, 0].set_title('Training: Angle History')
-    axs[3, 0].grid()
 
     axs[4, 0].set_xlabel('Training Steps')
     axs[4, 0].set_ylabel('Loss')
@@ -181,7 +170,7 @@ if __name__ == "__main__":
     # Initialize the trolley, PID controller, and LSTM model
     mass, spring, friction = torch.tensor(1.0), torch.tensor(0.5), torch.tensor(0.1)
     initial_Kp, initial_Ki, initial_Kd = torch.tensor(10.0), torch.tensor(0.1), torch.tensor(1.0)
-    input_size, hidden_size, output_size = 4, 20, 3
+    input_size, hidden_size, output_size = 1, 20, 3
 
     trolley = Trolley(mass, spring, friction, dt)
     pid = PID(initial_Kp, initial_Ki, initial_Kd)
@@ -189,16 +178,16 @@ if __name__ == "__main__":
     lstm_model = LSTMAdaptivePID(input_size, hidden_size, output_size)
     optimizer = optim.SGD(lstm_model.parameters(), lr=0.0005, momentum=0.9)
 
-    # Visualize the LSTM model
-    dummy_input = torch.randn(1, 1, input_size)
-    dummy_output, _ = lstm_model(dummy_input)
-    model_graph = make_dot(dummy_output, params=dict(lstm_model.named_parameters()))
-    model_graph.render("lstm_model_graph", format="png", cleanup=True)
-    print("LSTM model graph saved as 'lstm_model_graph.png'")
+    # # Visualize the LSTM model
+    # dummy_input = torch.randn(1, 1, input_size)
+    # dummy_output, _ = lstm_model(dummy_input)
+    # model_graph = make_dot(dummy_output, params=dict(lstm_model.named_parameters()))
+    # model_graph.render("lstm_model_graph", format="png", cleanup=True)
+    # print("LSTM model graph saved as 'lstm_model_graph.png'")
 
     # Training phase
     print("Training phase:")
-    setpoint_train = torch.tensor(1.0)
+    setpoint_train = torch.rand(1) * 5.0 + 1.0  # Random setpoint between 1.0 and 6.0
     epoch_results = []
     
     for epoch in range(num_epochs):
@@ -214,7 +203,7 @@ if __name__ == "__main__":
     val_results = run_simulation(trolley, pid, lstm_model, setpoint_val, validation_steps, dt, train=False)
 
     # Plot results
-    plot_simulation_results(epoch_results, val_results)
+    plot_simulation_results(epoch_results, val_results, setpoint_train, setpoint_val)
 
     # Print final results
     final_train_results = epoch_results[-1]
