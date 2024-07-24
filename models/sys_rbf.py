@@ -22,10 +22,10 @@ class RBFLayer(nn.Module):
         return torch.exp(-distances)
 
 class SystemRBFModel(nn.Module):
-    def __init__(self, hidden_features=50):  # Increased hidden features
+    def __init__(self, hidden_features=50, input_size=4, output_size=1):
         super(SystemRBFModel, self).__init__()
-        self.rbf = RBFLayer(in_features=4, out_features=hidden_features)  # Updated in_features to 4
-        self.linear = nn.Linear(hidden_features, 1)
+        self.rbf = RBFLayer(in_features=input_size, out_features=hidden_features)
+        self.linear = nn.Linear(hidden_features, output_size)
 
     def forward(self, x):
         x = self.rbf(x)
