@@ -16,3 +16,13 @@ class BaseSystem(ABC):
 			None
 		"""
 		pass
+
+	@abstractmethod
+	def get_state(self) -> Tensor:
+		"""
+		Return the current state of the object
+
+		Returns:
+			float: current state of the object
+		"""
+		pass
