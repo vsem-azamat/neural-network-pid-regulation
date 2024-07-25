@@ -1,3 +1,4 @@
+from scipy import optimize
 import torch
 import torch.optim as optim
 
@@ -6,11 +7,11 @@ from entities.systems.trolley import Trolley
 from models.sys_rbf import SystemRBFModel
 from models.pid_lstm import LSTMAdaptivePID
 
-from .utils import calculate_angle_2p
-from learning.pid_lstm_trolley import custom_loss, plot_simulation_results
+from .utils import calculate_angle_2p, custom_loss, plot_simulation_results
 
 def run_simulation(trolley, pid, lstm_model, rbf_model, X_normalizer, y_normalizer, setpoints, steps, dt, train=True):
     error_history = []
+    error_diff_history = []
     rbf_predictions = []
     time_points, positions, control_outputs = [], [], []
     kp_values, ki_values, kd_values = [], [], []
@@ -31,6 +32,7 @@ def run_simulation(trolley, pid, lstm_model, rbf_model, X_normalizer, y_normaliz
         setpoint = setpoints[current_setpoint_idx]
         current_position = trolley.get_state()
         error = setpoint - current_position
+        error_diff = (error - error_history[-1])/dt if len(error_history) > 0 else torch.tensor(0.0)
 
         # Prepare the input for the RBF model
         rbf_input = torch.tensor([current_position.item(), trolley.velocity.item(), trolley.acceleration.item(), 0.0]).unsqueeze(0)
@@ -39,7 +41,7 @@ def run_simulation(trolley, pid, lstm_model, rbf_model, X_normalizer, y_normaliz
         rbf_pred = y_normalizer.denormalize(rbf_pred_normalized)
 
         # Combine the error and RBF prediction as the LSTM input
-        lstm_input = torch.tensor([error.item(), rbf_pred[0].item()]).unsqueeze(0).unsqueeze(0)
+        lstm_input = torch.tensor([error.item(), error_diff.item(), rbf_pred[0].item()]).unsqueeze(0).unsqueeze(0)
 
         pid_params, hidden = lstm_model(lstm_input, hidden)
         kp, ki, kd = pid_params[0] * 5
@@ -54,6 +56,7 @@ def run_simulation(trolley, pid, lstm_model, rbf_model, X_normalizer, y_normaliz
 
         rbf_predictions.append(rbf_pred.item())
         error_history.append(error.item())
+        error_diff_history.append(error_diff.item())
 
         kp_values.append(kp.item())
         ki_values.append(ki.item())
@@ -68,6 +71,7 @@ def run_simulation(trolley, pid, lstm_model, rbf_model, X_normalizer, y_normaliz
             sequence_length = min(200, len(error_history))
             input_sequence = torch.tensor([
                 error_history[-sequence_length:],
+                error_diff_history[-sequence_length:],
                 rbf_predictions[-sequence_length:]
             ]).t().unsqueeze(0)
 
@@ -92,17 +96,18 @@ if __name__ == "__main__":
     validation_time = 30.0
     train_steps = int(train_time / dt.item())
     validation_steps = int(validation_time / dt.item())
-    num_epochs = 5
+    num_epochs = 10
 
     mass, spring, friction = torch.tensor(1.0), torch.tensor(0.5), torch.tensor(0.1)
     initial_Kp, initial_Ki, initial_Kd = torch.tensor(10.0), torch.tensor(0.1), torch.tensor(1.0)
-    input_size, hidden_size, output_size = 2, 20, 3
+    input_size, hidden_size, output_size = 3, 50, 3
 
     trolley = Trolley(mass, spring, friction, dt)
     pid = PID(initial_Kp, initial_Ki, initial_Kd)
     pid.set_limits(torch.tensor(50.0), torch.tensor(-50.0))
     lstm_model = LSTMAdaptivePID(input_size, hidden_size, output_size)
-    optimizer = optim.SGD(lstm_model.parameters(), lr=0.0005, momentum=0.9)
+    optimizer = optim.SGD(lstm_model.parameters(), lr=0.0002, momentum=0.2, nesterov=True)
+    # optimizer = optim.ASGD(lstm_model.parameters(), lr=0.002)
 
     # Load train the RBF model and normalizers 
     from utils.save_load import load_model, load_pickle, save_model
@@ -134,7 +139,7 @@ if __name__ == "__main__":
     val_results = run_simulation(trolley, pid, lstm_model, rbf_model, X_normalizer, y_normalizer, [setpoint_val], validation_steps, dt, train=False)
 
     # Plot results
-    plot_simulation_results(epoch_results, val_results, setpoints[-1], setpoint_val)
+    plot_simulation_results(epoch_results, val_results, setpoints[-1], setpoint_val, system_name='Trolley', save_name='pid_lstm_sys_rbf_trolley')
 
     # Print final results
     final_train_results = epoch_results[-1]
