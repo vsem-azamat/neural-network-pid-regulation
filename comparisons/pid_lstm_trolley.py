@@ -14,18 +14,21 @@ def compare_controllers(trolley, lstm_regulator, pid, rbf_model, X_normalizer, y
         kp_values, ki_values, kd_values = [], [], []
         hidden = None
         control_output = torch.tensor(0.0)
+        error_history = []
         
         for step in range(steps):
             current_time = step * dt.item()
             current_position = trolley.get_state()
             error = setpoint - current_position
+            error_history.append(error.item())
+            error_diff = (error - error_history[-1])/dt if len(error_history) > 0 else torch.tensor(0.0)
 
             if lstm_regulator and step >= warm_up_steps:
                 rbf_input = torch.tensor([current_position.item(), trolley.velocity.item(), trolley.acceleration.item(), control_output.item()]).unsqueeze(0)
                 rbf_input_normalized = X_normalizer.normalize(rbf_input)
                 rbf_pred_normalized = rbf_model(rbf_input_normalized)
                 rbf_pred = y_normalizer.denormalize(rbf_pred_normalized)
-                lstm_input = torch.tensor([error.item(), rbf_pred[0].item()]).unsqueeze(0).unsqueeze(0)
+                lstm_input = torch.tensor([error.item(), error_diff.item(), rbf_pred[0].item()]).unsqueeze(0).unsqueeze(0)
                 pid_params, hidden = lstm_regulator(lstm_input, hidden)
                 kp, ki, kd = pid_params[0] * 5
                 pid.update_gains(kp.item(), ki.item(), kd.item())
@@ -123,7 +126,7 @@ if __name__ == "__main__":
 
     mass, spring, friction = torch.tensor(1.0), torch.tensor(0.5), torch.tensor(0.1)
     initial_Kp, initial_Ki, initial_Kd = torch.tensor(1.314), torch.tensor(0.5), torch.tensor(0.707)
-    input_size, hidden_size, output_size = 2, 20, 3
+    input_size, hidden_size, output_size = 3, 50, 3
 
     # Initialize the trolley, LSTM PID, and RBF model
     trolley = Trolley(mass, spring, friction, dt)
