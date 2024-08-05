@@ -4,7 +4,7 @@ from torch import Tensor
 
 class BaseSystem(ABC):
 	@abstractmethod
-	def apply_control(self, control_output: Tensor, distrubance: Tensor | None = None) -> None:
+	def apply_control(self, control_output: Tensor, distrubance: Tensor | None = None) -> Tensor:
 		"""
 		Update the position and velocity of the object
 
