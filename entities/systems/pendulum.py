@@ -64,9 +64,9 @@ class NonLinearPendulumCart(BaseSystem):
         self.theta = theta + theta_dot * self.dt
         self.theta_dot = theta_dot + theta_ddot * self.dt
 
-        return self.get_state()
+        return self.get_X()
 
-    def get_state(self) -> Tensor:
+    def get_X(self) -> Tensor:
         return torch.tensor([self.x, self.x_dot, self.theta, self.theta_dot])
 
     def get_position(self) -> Tensor:

@@ -76,7 +76,7 @@ def plot_training_loss(losses):
     plt.grid(True)
     plt.show()
 
-def compare_predictions(model, trolley, X_normalizer, y_normalizer, num_steps=200):
+def compare_predictions(model, trolley: Trolley, X_normalizer, y_normalizer, num_steps=200):
     initial_position = torch.tensor(0.5)
     initial_velocity = torch.tensor(0.0)
     initial_acceleration = torch.tensor(0.0)
@@ -92,7 +92,7 @@ def compare_predictions(model, trolley, X_normalizer, y_normalizer, num_steps=20
     for control in control_inputs:
         # RBF model prediction
         with torch.no_grad():
-            rbf_input = torch.tensor([[trolley.position.item(), trolley.velocity.item(), trolley.acceleration.item(), control.item()]])
+            rbf_input = torch.tensor([[trolley.X.item(), trolley.dXdT.item(), trolley.acceleration.item(), control.item()]])
             rbf_input_normalized = X_normalizer.normalize(rbf_input)
             rbf_next_position_normalized = model(rbf_input_normalized)
             rbf_next_position = y_normalizer.denormalize(rbf_next_position_normalized).item()

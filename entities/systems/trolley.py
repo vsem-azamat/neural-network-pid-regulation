@@ -28,7 +28,6 @@ class Trolley(BaseSystem):
 		self.velocity = torch.tensor(0.)
 		self.acceleration = torch.tensor(0.)
 
-
 	def apply_control(self, control_output: Tensor, distrubance: Tensor = torch.tensor(0.)) -> Tensor:
 		"""
 		Update the position and velocity of the trolley based on the control output
@@ -50,18 +49,24 @@ class Trolley(BaseSystem):
 		self.position = self.position.detach() + self.velocity * self.dt
 		return self.position
 
-
-	def get_state(self) -> Tensor:
+	@property
+	def X(self) -> Tensor:
 		return self.position
-
+	
+	@property
+	def dXdT(self) -> Tensor:
+		return self.velocity
+	
+	@property
+	def d2XdT2(self) -> Tensor:
+		return self.acceleration
 
 	def get_U(self) -> tuple[Tensor, Tensor, Tensor]:
 		return self.position, self.position/self.dt, self.position/(self.dt**2)
 	
-
 	def reset(self) -> None:
 		"""Reset: position, velocity, and delta_position to zero"""
 		self.position = torch.tensor(0, dtype=torch.float32)
 		self.velocity = torch.tensor(0, dtype=torch.float32)
 		self.delta_position = torch.tensor(0, dtype=torch.float32)
-
+		self.acceleration = torch.tensor(0, dtype=torch.float32)

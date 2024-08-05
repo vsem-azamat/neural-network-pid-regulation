@@ -48,7 +48,7 @@ def run_simulation(thermal_system, pid, lstm_model, rbf_model, X_normalizer, y_n
         thermal_system.apply_control(control_output)
 
         time_points.append(current_time)
-        temperatures.append(current_temperature.item())
+        temperatures.append(current_temperature)
         control_outputs.append(control_output.item())
 
         rbf_predictions.append(rbf_pred.item())

@@ -4,7 +4,7 @@ from torch import Tensor
 
 class BaseSystem(ABC):
 	@abstractmethod
-	def apply_control(self, control_output: Tensor, distrubance: Tensor) -> None:
+	def apply_control(self, control_output: Tensor, distrubance: Tensor | None = None) -> None:
 		"""
 		Update the position and velocity of the object
 
@@ -17,12 +17,35 @@ class BaseSystem(ABC):
 		"""
 		pass
 
+	@property
 	@abstractmethod
-	def get_state(self) -> Tensor:
+	def X(self) -> Tensor:
 		"""
-		Return the current state of the object
+		Return the position of the object
 
 		Returns:
-			float: current state of the object
+			float: position of the object
+		"""
+		pass
+
+	@property
+	@abstractmethod
+	def dXdT(self) -> Tensor:
+		"""
+		Return the velocity of the object
+
+		Returns:
+			float: velocity of the object
+		"""
+		pass
+
+	@property
+	@abstractmethod
+	def d2XdT2(self) -> Tensor:
+		"""
+		Return the acceleration of the object
+
+		Returns:
+			float: acceleration of the object
 		"""
 		pass

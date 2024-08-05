@@ -9,6 +9,7 @@ from models.sys_rbf import SystemRBFModel
 from entities.systems.thermal import Thermal
 from utils.save_load import save_model, save_pickle
 
+
 def generate_training_data(thermal_system, num_samples=2000):
     X = torch.zeros((num_samples, 2))  # [temperature, control_input]
     y = torch.zeros((num_samples, 1))  # next_temperature
@@ -25,9 +26,9 @@ def generate_training_data(thermal_system, num_samples=2000):
 
     return X, y
 
-def train_rbf_model(model, thermal_system, num_epochs=500, batch_size=32, learning_rate=0.001):
+def train_rbf_model(model, thermal_system, num_epochs=600, batch_size=32, learning_rate=0.0001):
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate) # Adam is exacly better than SGD f
 
     X, y = generate_training_data(thermal_system)
     
@@ -72,7 +73,7 @@ def plot_training_loss(losses):
     plt.grid(True)
     plt.show()
 
-def compare_predictions(model, thermal_system, X_normalizer, y_normalizer, num_steps=200):
+def compare_predictions(model, thermal_system: Thermal, X_normalizer, y_normalizer, num_steps=200):
     initial_temperature = torch.tensor(25.0)
     control_inputs = torch.linspace(0, 1000, num_steps)
 
@@ -84,7 +85,7 @@ def compare_predictions(model, thermal_system, X_normalizer, y_normalizer, num_s
     for control in control_inputs:
         # RBF model prediction
         with torch.no_grad():
-            rbf_input = torch.tensor([[thermal_system.temperature.item(), control.item()]])
+            rbf_input = torch.tensor([[thermal_system.X.item(), control.item()]])
             rbf_input_normalized = X_normalizer.normalize(rbf_input)
             rbf_next_temp_normalized = model(rbf_input_normalized)
             rbf_next_temp = y_normalizer.denormalize(rbf_next_temp_normalized).item()
