@@ -3,9 +3,9 @@ import torch
 import pickle
 from config import cnfg
 
-def load_model(model, name):
+def load_model(model: torch.nn.Module, name: str, weights_only: bool = False) -> torch.nn.Module:
     path = os.path.join(cnfg.WEGHTS_DIR, name)
-    model.load_state_dict(torch.load(path))
+    model.load_state_dict(torch.load(path, weights_only=weights_only))
     return model
 
 def save_model(model, name: str) -> None:
