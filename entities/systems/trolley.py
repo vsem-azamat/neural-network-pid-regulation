@@ -42,11 +42,11 @@ class Trolley(BaseSystem):
 		assert control_output is not None, "Control output is None"
 		F = control_output
 		self.acceleration = F / self.mass - \
-			self.friction * self.velocity.detach() / self.mass - \
-			self.spring * self.position.detach() / self.mass - \
+			self.friction * self.velocity.clone().detach() / self.mass - \
+			self.spring * self.position.clone().detach() / self.mass - \
 			distrubance / self.mass
-		self.velocity = self.velocity.detach() + self.acceleration * self.dt
-		self.position = self.position.detach() + self.velocity * self.dt
+		self.velocity = self.velocity.clone().detach() + self.acceleration * self.dt
+		self.position = self.position.clone().detach() + self.velocity * self.dt
 		return self.position
 
 	@property
