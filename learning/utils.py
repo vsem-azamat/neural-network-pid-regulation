@@ -135,19 +135,17 @@ def plot_simulation_results(epoch_results, validation_results, setpoint_train, s
         print(f"Plot saved as {save_name}")
 
 
-
 def run_simulation(
     system: BaseSystem, 
     pid: PID, 
     lstm_model: torch.nn.Module, 
     rbf_model, 
-    X_normalizer, 
-    y_normalizer, 
     setpoints, 
     steps, 
-    dt, 
+    dt,
     optimizer: Optimizer = None,
     train=True, 
+    validation=False,
     sequence_length=100
     ):
 
@@ -177,9 +175,7 @@ def run_simulation(
 
         # Prepare the input for the RBF model
         rbf_input = torch.tensor([current_position.item(), system.dXdT.item(), system.d2XdT2.item(), 0.0]).unsqueeze(0)
-        rbf_input_normalized = X_normalizer.normalize(rbf_input)
-        rbf_pred_normalized = rbf_model(rbf_input_normalized)
-        rbf_pred = y_normalizer.denormalize(rbf_pred_normalized)
+        rbf_pred = rbf_model(rbf_input)
 
         # Combine the error and RBF prediction as the LSTM input
         lstm_input = torch.tensor([error.item(), error_diff.item(), rbf_pred[0].item()]).unsqueeze(0).unsqueeze(0)
@@ -213,6 +209,8 @@ def run_simulation(
             
             # Loss calculation
             loss_rbf_positions = torch.cat(rbf_predictions[-sequence_length_min:], dim=0)
+            # print(rbf_predictions[-sequence_length_min:])
+            # print(loss_rbf_positions[:5])
             loss_setpoints = setpoints[current_setpoint_idx].repeat(sequence_length_min)
             loss_control_output = torch.tensor(control_outputs[-sequence_length_min:])
             loss_time_points = time_points[-sequence_length_min:]
@@ -234,5 +232,8 @@ def run_simulation(
             
             loss.backward()
             optimizer.step()
+
+    if validation:
+        return time_points, positions, control_outputs, kp_values, ki_values, kd_values, angle_history, []
 
     return time_points, positions, control_outputs, kp_values, ki_values, kd_values, angle_history, losses
