@@ -4,10 +4,9 @@ import torch.optim as optim
 import numpy as np
 import matplotlib.pyplot as plt
 
-from utils.normalizer import Normalizer
 from models.sys_rbf import SystemRBFModel
 from entities.systems.thermal import Thermal
-from utils.save_load import save_model, save_pickle
+from utils import save_load
 
 
 def generate_training_data(thermal_system, num_samples=2000):
@@ -15,8 +14,8 @@ def generate_training_data(thermal_system, num_samples=2000):
     y = torch.zeros((num_samples, 1))  # next_temperature
 
     for i in range(num_samples):
-        temperature = torch.rand(1) * 100  # Random temperature between 0 and 100
-        control_input = torch.rand(1) * 1000  # Random control input between 0 and 1000
+        temperature = torch.rand(1) * 50.0 + 20.0
+        control_input = torch.rand(1) * 1000.0  # Random control input between 0 and 1000
 
         thermal_system.temperature = temperature
         next_temperature = thermal_system.apply_control(control_input)
@@ -26,26 +25,20 @@ def generate_training_data(thermal_system, num_samples=2000):
 
     return X, y
 
-def train_rbf_model(model, thermal_system, num_epochs=600, batch_size=32, learning_rate=0.0001):
+def train_rbf_model(model, X, y, num_epochs=500, batch_size=64, learning_rate=0.001):
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate) # Adam is exacly better than SGD f
-
-    X, y = generate_training_data(thermal_system)
-    
-    # Normalize the data
-    X_normalizer = Normalizer(X)
-    y_normalizer = Normalizer(y)
-    
-    X_normalized = X_normalizer.normalize(X)
-    y_normalized = y_normalizer.normalize(y)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
     losses = []
 
     for epoch in range(num_epochs):
         epoch_losses = []
-        for i in range(0, len(X_normalized), batch_size):
-            batch_X = X_normalized[i:i+batch_size]
-            batch_y = y_normalized[i:i+batch_size]
+        permutation = torch.randperm(X.size()[0])
+        X_shuffled = X[permutation]
+        y_shuffled = y[permutation]
+        for i in range(0, len(X), batch_size):
+            batch_X = X_shuffled[i:i+batch_size]
+            batch_y = y_shuffled[i:i+batch_size]
 
             outputs = model(batch_X)
             loss = criterion(outputs, batch_y)
@@ -53,15 +46,15 @@ def train_rbf_model(model, thermal_system, num_epochs=600, batch_size=32, learni
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            
+
             epoch_losses.append(loss.item())
 
         avg_loss = sum(epoch_losses) / len(epoch_losses)
         losses.append(avg_loss)
-        if (epoch + 1) % 50 == 0:
+        if (epoch + 1) % 10 == 0:
             print(f'Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}')
-    
-    return losses, X_normalizer, y_normalizer
+
+    return losses
 
 def plot_training_loss(losses):
     plt.figure(figsize=(10, 5))
@@ -73,7 +66,7 @@ def plot_training_loss(losses):
     plt.grid(True)
     plt.show()
 
-def compare_predictions(model, thermal_system: Thermal, X_normalizer, y_normalizer, num_steps=200):
+def compare_predictions(model, thermal_system: Thermal, num_steps=200):
     initial_temperature = torch.tensor(25.0)
     control_inputs = torch.linspace(0, 1000, num_steps)
 
@@ -86,9 +79,7 @@ def compare_predictions(model, thermal_system: Thermal, X_normalizer, y_normaliz
         # RBF model prediction
         with torch.no_grad():
             rbf_input = torch.tensor([[thermal_system.X.item(), control.item()]])
-            rbf_input_normalized = X_normalizer.normalize(rbf_input)
-            rbf_next_temp_normalized = model(rbf_input_normalized)
-            rbf_next_temp = y_normalizer.denormalize(rbf_next_temp_normalized).item()
+            rbf_next_temp = model(rbf_input)
             rbf_temperatures.append(rbf_next_temp)
 
         # Actual thermal system
@@ -119,23 +110,45 @@ if __name__ == "__main__":
         dt=torch.tensor(0.1)
     )
 
-    # Initialize and train the RBF model
-    rbf_model = SystemRBFModel(input_size=2, output_size=1, hidden_features=20)
-    losses, X_normalizer, y_normalizer = train_rbf_model(rbf_model, thermal_system, num_epochs=500, learning_rate=0.001)
+    # Generate training data
+    X, y = generate_training_data(thermal_system)
 
-    # Save the trained model and normalizers
-    save_model(rbf_model, 'sys_rbf_thermal.pth')
-    save_pickle((X_normalizer, y_normalizer), 'sys_rbf_thermal_normalizers.pkl')
+    # Compute mean and std
+    X_mean = X.mean(dim=0)
+    X_std = X.std(dim=0, unbiased=False)
+    y_mean = y.mean(dim=0)
+    y_std = y.std(dim=0, unbiased=False)
+
+    # Initialize and train the RBF model
+    rbf_model = SystemRBFModel(
+        input_size=2,
+        input_mean=X_mean,
+        input_std=X_std,
+        output_mean=y_mean,
+        output_std=y_std,
+        hidden_features=20
+    )
+
+    losses = train_rbf_model(
+        rbf_model, 
+        X, y, 
+        num_epochs=400,
+        batch_size=64,
+        learning_rate=0.001
+    )
+
+    # Save the trained RBF model
+    save_load.save_model(rbf_model, 'sys_rbf_thermal.pth')
 
     # Plot training loss
     plot_training_loss(losses)
 
-    # Compare predictions
-    control_inputs, rbf_temperatures, actual_temperatures = compare_predictions(rbf_model, thermal_system, X_normalizer, y_normalizer)
+    # Compare RBF model predictions with actual thermal system
+    control_inputs, rbf_temperatures, actual_temperatures = compare_predictions(rbf_model, thermal_system)
 
     # Plot comparison
     plot_comparison(control_inputs, rbf_temperatures, actual_temperatures)
 
-    # Calculate and print Mean Squared Error
-    mse = np.mean((np.array(rbf_temperatures) - np.array(actual_temperatures))**2)
+    # Calculate the mean squared error
+    mse = np.mean((np.array(rbf_temperatures) - np.array(actual_temperatures)) ** 2)
     print(f"Mean Squared Error between RBF model and actual system: {mse:.6f}")
