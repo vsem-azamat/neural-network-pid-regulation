@@ -138,7 +138,7 @@ if __name__ == "__main__":
     )
 
     # Save the trained RBF model
-    save_load.save_model(rbf_model, 'sys_rbf_thermal.pth')
+    save_load.save_rbf_model(rbf_model, 'sys_rbf_thermal.pth')
 
     # Plot training loss
     plot_training_loss(losses)
