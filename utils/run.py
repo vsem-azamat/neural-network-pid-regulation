@@ -1,3 +1,4 @@
+from math import pi
 import torch
 from typing import Literal
 from torch.optim.optimizer import Optimizer
@@ -38,7 +39,7 @@ def run_simulation(
             system.X, 
             system.dXdT, 
             system.d2XdT2, 
-            0.0
+            results.control_outputs[-1] if results.control_outputs else 0.0
         ]).unsqueeze(0)
         rbf_pred = rbf_model(rbf_input)[0][0]
 
