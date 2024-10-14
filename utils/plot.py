@@ -12,7 +12,9 @@ def plot_simulation_results(
     fig, axs = plt.subplots(4, 2, figsize=(20, 30))
     fig.suptitle(f'Adaptive LSTM-PID {system_name} Control Simulation', fontsize=16)
 
-    colors = ['blue', 'orange', 'green', 'red', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan']
+    colors = [
+        'blue', 'orange', 'green', 'red', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan',
+        'darkblue', 'darkorange', 'darkgreen', 'darkred', 'darkpurple', 'darkbrown', 'darkpink', 'darkgray',        ]
     # Plot training results (left column)
     for epoch_idx, results in enumerate(epoch_results):
         results = results.to_numpy()
