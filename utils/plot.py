@@ -14,7 +14,11 @@ def plot_simulation_results(
 
     colors = [
         'blue', 'orange', 'green', 'red', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan',
-        'darkblue', 'darkorange', 'darkgreen', 'darkred', 'darkpurple', 'darkbrown', 'darkpink', 'darkgray',        ]
+        'darkblue', 'darkorange', 'darkgreen', 'darkred', '#800080', '#ff00ff', '#00ffff', '#ffff00',
+        '#00ff00', '#ff0000', '#0000ff', '#000000', '#808080', '#800000', '#008000', '#000080', '#808000',
+        '#800080', '#008080', '#c0c0c0', '#ff0000', '#00ff00', '#0000ff', '#ffff00', '#00ffff', '#ff00ff',
+        '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#c0c0c0', '#ff0000', '#00ff00',
+    ]
     # Plot training results (left column)
     for epoch_idx, results in enumerate(epoch_results):
         results = results.to_numpy()
@@ -27,6 +31,7 @@ def plot_simulation_results(
         ki_values = results.ki_values
         kd_values = results.kd_values
         losses = results.losses
+        errors = results.error_history
 
 
         alpha = (epoch_idx + 1) / len(epoch_results)
@@ -48,13 +53,13 @@ def plot_simulation_results(
         axs[1, 0].grid()
 
         # Plot PID parameters
-        axs[2, 0].plot(time_points, kp_values, label='Kp', alpha=alpha, color=colors[epoch_idx], linestyle='--')
-        axs[2, 0].plot(time_points, ki_values, label='Ki', alpha=alpha, color=colors[epoch_idx], linestyle='-.')
-        axs[2, 0].plot(time_points, kd_values, label='Kd', alpha=alpha, color=colors[epoch_idx], linestyle=':')
+        axs[2, 0].plot(time_points, kp_values, alpha=alpha, color=colors[epoch_idx], linestyle='--')
+        axs[2, 0].plot(time_points, ki_values, alpha=alpha, color=colors[epoch_idx], linestyle='-.')
+        axs[2, 0].plot(time_points, kd_values, alpha=alpha, color=colors[epoch_idx], linestyle=':')
         axs[2, 0].set_ylabel('PID Parameters')
         axs[2, 0].set_title(f'Training: {system_name} PID Parameters')
         if epoch_idx == len(epoch_results) - 1:
-            axs[2, 0].legend()
+            axs[2, 0].legend(['Kp --', 'Ki -.', 'Kd :'])
         axs[2, 0].grid()
 
 
@@ -65,6 +70,16 @@ def plot_simulation_results(
             axs[3, 0].set_ylabel('Loss')
             axs[3, 0].set_title(f'Training: {system_name} Loss')
             axs[3, 0].grid()
+
+        # Plot errors
+        if len(errors) > 0:
+            axs[3, 1].plot(time_points, errors, alpha=alpha)
+            axs[3, 1].set_xlabel('Time')
+            axs[3, 1].set_ylabel('Error')
+            axs[3, 1].set_title(f'Training: {system_name} Error')
+            axs[3, 1].grid()
+            
+
 
     # Plot validation results (right column)
     validation_result = validation_result.to_numpy()

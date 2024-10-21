@@ -10,8 +10,7 @@ class SimulationConfig(Generic[T]):
     setpoints: List[T]
     dt: T
     sequence_length: int = 100
-    input_sequence_length: int = 10
-    input_steps: int = 5
+    sequence_step: int = 5
 
 @dataclass
 class SimulationResults(Generic[T]):
@@ -48,34 +47,20 @@ class SimulationResults(Generic[T]):
         )
 
     def detach_tensors(self) -> 'SimulationResults[torch.Tensor]':
-        return SimulationResults(
-            time_points=[time.clone().detach() for time in self.time_points],
-            positions=[position.clone().detach() for position in self.positions],
-            control_outputs=[control_output.clone().detach() for control_output in self.control_outputs],
-            rbf_predictions=[rbf_pred.clone().detach() for rbf_pred in self.rbf_predictions],
-            error_history=[error.clone().detach() for error in self.error_history],
-            error_diff_history=[error_diff.clone().detach() for error_diff in self.error_diff_history],
-            kp_values=[kp.clone().detach() for kp in self.kp_values],
-            ki_values=[ki.clone().detach() for ki in self.ki_values],
-            kd_values=[kd.clone().detach() for kd in self.kd_values],
-            angle_history=[angle.clone().detach() for angle in self.angle_history],
-            losses=[loss.clone().detach() for loss in self.losses],
-            setpoints=[sp.clone().detach() for sp in self.setpoints]
-        )
+        results = self.clone_tensors()
+        for tensor_list in results.__dict__.values():
+            for tensor in tensor_list:
+                tensor.detach_()
+        return results
+
+    def clone_tensors(self) -> 'SimulationResults[torch.Tensor]':
+        for key, value in self.__dict__.items():
+            setattr(self, key, [tensor.clone() for tensor in value])
+        return self
 
     def to_numpy(self) -> 'SimulationResults[np.ndarray]':
         results = self.detach_tensors()
-        return SimulationResults(
-            time_points=[time.numpy() for time in results.time_points],
-            positions=[position.numpy() for position in results.positions],
-            control_outputs=[control_output.numpy() for control_output in results.control_outputs],
-            rbf_predictions=[rbf_pred.numpy() for rbf_pred in results.rbf_predictions],
-            error_history=[error.numpy() for error in results.error_history],
-            error_diff_history=[error_diff.numpy() for error_diff in results.error_diff_history],
-            kp_values=[kp.numpy() for kp in results.kp_values],
-            ki_values=[ki.numpy() for ki in results.ki_values],
-            kd_values=[kd.numpy() for kd in results.kd_values],
-            angle_history=[angle.numpy() for angle in results.angle_history],
-            losses=[loss.numpy() for loss in results.losses],
-            setpoints=[sp.numpy() for sp in results.setpoints]
-        )
+        for tensor_list in results.__dict__.values():
+            for i, tensor in enumerate(tensor_list):
+                tensor_list[i] = tensor.numpy()
+        return results

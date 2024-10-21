@@ -1,4 +1,3 @@
-import math
 import torch
 from torch import optim
 
@@ -11,17 +10,64 @@ from utils.run import run_simulation, SimulationConfig, SimulationResults
 from utils.plot import plot_simulation_results
 
 
+def custom_loss(results: SimulationResults, config: SimulationConfig, step: int) -> torch.Tensor:
+    left_slice = max(0, step - config.sequence_length)
+    right_slice = step
+
+    # Slices
+    positions = results.positions[left_slice:right_slice:config.sequence_step]
+    setpoints = results.setpoints[left_slice:right_slice:config.sequence_step]
+    # kp_values = results.kp_values[left_slice:right_slice:config.sequence_step]
+    # ki_values = results.ki_values[left_slice:right_slice:config.sequence_step]
+    # kd_values = results.kd_values[left_slice:right_slice:config.sequence_step]
+
+
+    # Tensors
+    positions_tensor = torch.stack(positions)
+    setpoints_tensor = torch.stack(setpoints)
+    # kp_tensor = torch.stack(kp_values)
+    # ki_tensor = torch.stack(ki_values)
+    # kd_tensor = torch.stack(kd_values)
+
+    # Errors
+    tracking_error = torch.mean((positions_tensor - setpoints_tensor) ** 2)
+    overshoot = torch.mean(torch.relu(positions_tensor - setpoints_tensor))
+    # kp_gain = torch.mean(kp_tensor**2)
+    # ki_gain = torch.mean(ki_tensor**2)
+    # kd_gain = torch.mean(kd_tensor**2)
+
+    loss = (
+        0.5 * tracking_error +
+        0.7 * overshoot
+        
+        # 0.2 * kp_gain +
+        # 0.1 * ki_gain + 
+        # 0.1 * kd_gain
+    )
+    return loss
+
+
+
+def extract_rbf_input(system: Trolley, results: SimulationResults) -> torch.Tensor:
+    return torch.tensor([
+        system.X,
+        system.dXdT,
+        system.d2XdT2,
+        results.control_outputs[-1] if results.control_outputs else 0.0
+    ]).unsqueeze(0)
+
+
 if __name__ == "__main__":
-    dt = torch.tensor(0.01)
-    train_time = 30.0
+    dt = torch.tensor(0.02)
+    train_time = 15.
     validation_time = 20.0
     train_steps = int(train_time / dt.item())
     validation_steps = int(validation_time / dt.item())
-    num_epochs = 5
+    num_epochs = 4
 
     mass, spring, friction = torch.tensor(1.0), torch.tensor(0.5), torch.tensor(0.1)
     initial_Kp, initial_Ki, initial_Kd = torch.tensor(10.0), torch.tensor(0.1), torch.tensor(1.0)
-    input_size, hidden_size, output_size = 3, 10, 3
+    input_size, hidden_size, output_size = 4, 20, 3
 
     trolley = Trolley(mass, spring, friction, dt)
     pid = PID(initial_Kp, initial_Ki, initial_Kd)
@@ -29,15 +75,14 @@ if __name__ == "__main__":
     lstm_model = LSTMAdaptivePID(input_size, hidden_size, output_size)
     optimizer = optim.SGD(
         lstm_model.parameters(), 
-        lr=0.002, 
-        differentiable=True,
+        lr=0.002,
+        momentum=0.9,
+        # differentiable=True,
         # weight_decay=0.0001,
-        # momentum=0.9,
         # nesterov=True,
         # dampening=0.1
     )
-
-    # Load train the RBF model and normalizers 
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
     rbf_model = save_load.load_rbf_model('sys_rbf_trolley.pth')
 
     # Training phase
@@ -48,12 +93,7 @@ if __name__ == "__main__":
         print(f"Epoch {epoch + 1}/{num_epochs}")
         trolley.reset()
         
-        # setpoints = torch.zeros(train_steps)
-        # intervals = 3
-        # for i in range(intervals):
-            # setpoints[int(i * train_steps / intervals):int((i + 1) * train_steps / intervals)] = torch.tensor(10.0) * (i + 1)
         setpoints = [torch.randn(1) * 10] * train_steps
-
         train_results = run_simulation(
             system=trolley,
             pid=pid,
@@ -61,16 +101,18 @@ if __name__ == "__main__":
             rbf_model=rbf_model,
             simulation_config=SimulationConfig(
                 setpoints=setpoints, 
-                dt=dt, 
-                sequence_length=300,
-                input_sequence_length=10,
-                input_steps=10
+                dt=dt,
+                sequence_length=(len(setpoints)-1)//2,
+                sequence_step=5
                 ),
             optimizer=optimizer,
-            session='train'
+            session='train',
+            # loss_function=custom_loss
+
         )
 
         epoch_results.append(train_results)
+        scheduler.step()
 
     # Save the trained LSTM model
     save_load.save_model(lstm_model, 'pid_lstm_trolley.pth')
@@ -84,8 +126,8 @@ if __name__ == "__main__":
         pid=pid,
         lstm_model=lstm_model,
         rbf_model=rbf_model,
-        simulation_config=SimulationConfig(setpoint_val, dt, sequence_length=10),
-        session='validation'
+        simulation_config=SimulationConfig(setpoint_val, dt, sequence_length=50),
+        session='validation',
     )
 
     # Plot results

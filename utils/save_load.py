@@ -41,7 +41,7 @@ def save_rbf_model(model: SystemRBFModel, name: str) -> None:
 
 def load_rbf_model(name: str) -> SystemRBFModel:
     path = os.path.join(cnfg.WEIGHTS_DIR, name)
-    checkpoint = torch.load(path)
+    checkpoint = torch.load(path, weights_only=True)
     model = SystemRBFModel(
         input_size=checkpoint['input_size'],
         output_size=checkpoint['output_size'],
