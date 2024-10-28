@@ -161,7 +161,7 @@ def run_validation(
     lstm_model: torch.nn.Module,
     rbf_model: torch.nn.Module,
     simulation_config: SimulationConfig,
-    loss_function = None
+    loss_function: Callable[[SimulationResults, SimulationConfig, int], torch.Tensor]
 ):
     return run_simulation(
         system,
