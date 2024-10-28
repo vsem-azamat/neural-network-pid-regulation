@@ -1,10 +1,17 @@
+import os
 import matplotlib.pyplot as plt
-from utils.run import SimulationResults
+
+from config import cnfg
+from utils.run import SimulationResults, SimulationConfig
 
 
 def plot_simulation_results(
-    epoch_results: list[SimulationResults], 
-    validation_result: SimulationResults, 
+    training_results: list[SimulationResults],
+    training_config: SimulationConfig,
+
+    validation_result: SimulationResults,
+    validation_config: SimulationConfig,
+
     system_name: str = '<System>', 
     save_name=None
     ):
@@ -20,7 +27,7 @@ def plot_simulation_results(
         '#800000', '#008000', '#000080', '#808000', '#800080', '#008080', '#c0c0c0', '#ff0000', '#00ff00',
     ]
     # Plot training results (left column)
-    for epoch_idx, results in enumerate(epoch_results):
+    for epoch_idx, results in enumerate(training_results):
         results = results.to_numpy()
         time_points = results.time_points
         positions = results.positions
@@ -34,7 +41,7 @@ def plot_simulation_results(
         errors = results.error_history
 
 
-        alpha = (epoch_idx + 1) / len(epoch_results)
+        alpha = (epoch_idx + 1) / len(training_results)
 
         # Plot positions
         axs[0, 0].plot(time_points, positions, label=f'Epoch {epoch_idx+1}', alpha=alpha, color=colors[epoch_idx])
@@ -42,7 +49,7 @@ def plot_simulation_results(
         axs[0, 0].plot(time_points, setpoints, linestyle='--', color='red', alpha=alpha)
         axs[0, 0].set_ylabel('Position')
         axs[0, 0].set_title(f'Training: {system_name} Position')
-        if epoch_idx == len(epoch_results) - 1:
+        if epoch_idx == len(training_results) - 1:
             axs[0, 0].legend()
         axs[0, 0].grid()
 
@@ -58,7 +65,7 @@ def plot_simulation_results(
         axs[2, 0].plot(time_points, kd_values, alpha=alpha, color=colors[epoch_idx], linestyle=':')
         axs[2, 0].set_ylabel('PID Parameters')
         axs[2, 0].set_title(f'Training: {system_name} PID Parameters')
-        if epoch_idx == len(epoch_results) - 1:
+        if epoch_idx == len(training_results) - 1:
             axs[2, 0].legend(['Kp --', 'Ki -.', 'Kd :'])
         axs[2, 0].grid()
 
@@ -121,5 +128,6 @@ def plot_simulation_results(
     plt.show()
 
     if save_name is not None:
-        fig.savefig(save_name + '.png')
+        save_path = os.path.join(cnfg.PLOTS_DIR, save_name + '.png')
+        fig.savefig(save_path)
         print(f"Plot saved as {save_name}")
