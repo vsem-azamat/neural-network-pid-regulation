@@ -10,40 +10,46 @@ from utils.run import run_simulation, SimulationConfig, SimulationResults
 from utils.plot import plot_simulation_results
 
 
-def custom_loss(results: SimulationResults, config: SimulationConfig, step: int) -> torch.Tensor:
-    left_slice = max(0, step - config.sequence_length)
-    right_slice = step
+def extract_rbf_input(system: Trolley, results: SimulationResults) -> torch.Tensor:
+    inputs = [
+        system.X, 
+        system.dXdT, 
+        system.d2XdT2, 
+        results.control_outputs[-1] if results.control_outputs else 0.0
+    ]
+    rbf_input = torch.tensor(inputs)
+    return rbf_input.unsqueeze(0)
 
-    # Slices
-    positions = results.rbf_predictions[left_slice:right_slice:config.sequence_step]
-    setpoints = results.setpoints[left_slice:right_slice:config.sequence_step]
-    kp_values = results.kp_values[left_slice:right_slice:config.sequence_step]
-    # ki_values = results.ki_values[left_slice:right_slice:config.sequence_step]
-    # kd_values = results.kd_values[left_slice:right_slice:config.sequence_step]
 
+def extract_lstm_input(
+    simulation_config: SimulationConfig,
+    results: SimulationResults,
+) -> torch.Tensor:
+    input_array = torch.zeros(4, simulation_config.sequence_length)
 
-    # Tensors
-    positions_tensor = torch.stack(positions)
-    setpoints_tensor = torch.stack(setpoints)
-    kp_tensor = torch.stack(kp_values)
-    # ki_tensor = torch.stack(ki_values)
-    # kd_tensor = torch.stack(kd_values)
+    # Populate input array with historical data
+    error_history_len = min(simulation_config.sequence_length, len(results.error_history))
+    kp_values_len = min(simulation_config.sequence_length, len(results.kp_values))
+    ki_values_len = min(simulation_config.sequence_length, len(results.ki_values))
+    kd_values_len = min(simulation_config.sequence_length, len(results.kd_values))
 
-    # Errors
-    tracking_error = torch.mean((positions_tensor - setpoints_tensor) ** 2)
-    overshoot = torch.mean(torch.relu(positions_tensor - setpoints_tensor))
-    kp_gain = torch.mean(kp_tensor**2)
-    # ki_gain = torch.mean(ki_tensor**2)
-    # kd_gain = torch.mean(kd_tensor**2)
-
-    loss = (
-        0.5 * tracking_error +
-        0.7 * overshoot
-        # 0.2 * kp_gain
-        # 0.1 * ki_gain + 
-        # 0.1 * kd_gain
+    # Paste last values
+    input_array[0, -error_history_len:] = torch.tensor(
+        results.error_history[-error_history_len:] if results.error_history else [0.0] * simulation_config.sequence_length
     )
-    return loss
+    input_array[1, -kp_values_len:] = torch.tensor(
+        results.kp_values[-kp_values_len:] if results.kp_values else [0.0] * simulation_config.sequence_length
+    )
+    input_array[2, -ki_values_len:] = torch.tensor(
+        results.ki_values[-ki_values_len:] if results.ki_values else [0.0] * simulation_config.sequence_length
+    )
+    input_array[3, -kd_values_len:] = torch.tensor(
+        results.kd_values[-kd_values_len:] if results.kd_values else [0.0] * simulation_config.sequence_length
+    )
+
+    # Prepare LSTM input
+    lstm_input = input_array.transpose(0, 1).unsqueeze(0)
+    return lstm_input
 
 
 if __name__ == "__main__":
@@ -67,18 +73,12 @@ if __name__ == "__main__":
         lstm_model.parameters(), 
         lr=lr,
         momentum=0.9,
-        # differentiable=True,
-        # weight_decay=0.0001,
-        # nesterov=True,
-        # dampening=0.1
     )
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
     rbf_model = save_load.load_rbf_model('sys_rbf_trolley.pth')
 
-    # Training phase
     print("Training phase:")
     epoch_results: list[SimulationResults] = []
-
     for epoch in range(num_epochs):
         print(f"Epoch {epoch + 1}/{num_epochs}")
         trolley.reset()
@@ -98,7 +98,8 @@ if __name__ == "__main__":
             simulation_config=trainining_config,
             optimizer=optimizer,
             session='train',
-            loss_function=custom_loss
+            extract_rbf_input=extract_rbf_input,
+            extract_lstm_input=extract_lstm_input,
         )
 
         epoch_results.append(train_results)
@@ -116,22 +117,23 @@ if __name__ == "__main__":
         dt=dt,
         sequence_length=50
     )
-    val_results = run_simulation(
+    validation_results = run_simulation(
         system=trolley,
         pid=pid,
         lstm_model=lstm_model,
         rbf_model=rbf_model,
         simulation_config=validation_config,
         session='validation',
-        loss_function=custom_loss
+        extract_rbf_input=extract_rbf_input,
+        extract_lstm_input=extract_lstm_input,
     )
 
     # Plot results
     plot_simulation_results(
         training_results=epoch_results,
-        training_config=SimulationConfig(setpoints, dt, sequence_length=50),
+        training_config=trainining_config,
 
-        validation_result=val_results,
+        validation_result=validation_results,
         validation_config=validation_config,
 
         system_name='Trolley',

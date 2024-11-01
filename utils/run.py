@@ -4,6 +4,7 @@ from torch.optim.optimizer import Optimizer
 
 from entities.pid import PID
 from entities.systems import BaseSystem
+from utils.loss import custom_loss
 from utils.others import calculate_angle_2p
 from classes.simulation import SimulationConfig, SimulationResults
 
@@ -16,45 +17,18 @@ def simulation_step(
     simulation_config: SimulationConfig,
     results: SimulationResults,
     step: int,
+    extract_rbf_input: Callable[[BaseSystem, SimulationResults], torch.Tensor],
+    extract_lstm_input: Callable[[SimulationConfig, SimulationResults], torch.Tensor],
     hidden: torch.Tensor | None = None
 ):
     current_time = step * simulation_config.dt
 
     # >>> RBF <<<
-    rbf_input = torch.tensor([
-        system.X, 
-        system.dXdT, 
-        system.d2XdT2, 
-        results.control_outputs[-1] if results.control_outputs else 0.0
-    ]).unsqueeze(0)
-
+    rbf_input = extract_rbf_input(system, results)
     rbf_pred = rbf_model(rbf_input)[0][0]
 
     # >>> LSTM <<<
-    input_array = torch.zeros(4, simulation_config.sequence_length)
-
-    # Populate input array with historical data
-    error_history_len = min(simulation_config.sequence_length, len(results.error_history))
-    kp_values_len = min(simulation_config.sequence_length, len(results.kp_values))
-    ki_values_len = min(simulation_config.sequence_length, len(results.ki_values))
-    kd_values_len = min(simulation_config.sequence_length, len(results.kd_values))
-
-    # Paste last values
-    input_array[0, -error_history_len:] = torch.tensor(
-        results.error_history[-error_history_len:] if results.error_history else [0.0] * simulation_config.sequence_length
-    )
-    input_array[1, -kp_values_len:] = torch.tensor(
-        results.kp_values[-kp_values_len:] if results.kp_values else [0.0] * simulation_config.sequence_length
-    )
-    input_array[2, -ki_values_len:] = torch.tensor(
-        results.ki_values[-ki_values_len:] if results.ki_values else [0.0] * simulation_config.sequence_length
-    )
-    input_array[3, -kd_values_len:] = torch.tensor(
-        results.kd_values[-kd_values_len:] if results.kd_values else [0.0] * simulation_config.sequence_length
-    )
-
-    # Prepare LSTM input
-    lstm_input = input_array.transpose(0, 1).unsqueeze(0)
+    lstm_input = extract_lstm_input(simulation_config, results)
 
     if step > 10:
         lstm_pred, hidden = lstm_model(
@@ -104,7 +78,9 @@ def run_simulation(
     lstm_model: torch.nn.Module,
     rbf_model: torch.nn.Module,
     simulation_config: SimulationConfig,
-    loss_function: Callable[[SimulationResults, SimulationConfig, int], torch.Tensor],
+    extract_rbf_input: Callable[[BaseSystem, SimulationResults], torch.Tensor],
+    extract_lstm_input: Callable[[SimulationConfig, SimulationResults], torch.Tensor],
+    loss_function: Callable[[SimulationResults, SimulationConfig, int], torch.Tensor] = custom_loss,
     session: Literal['train', 'validation'] = 'train',
     optimizer: Optimizer | None = None,
 ):
@@ -122,14 +98,16 @@ def run_simulation(
     results = SimulationResults()
     for step in range(steps):
         hidden = simulation_step(
-            system,
-            pid,
-            lstm_model,
-            rbf_model,
-            simulation_config,
-            results,
-            step,
-            hidden
+            system=system,
+            pid=pid,
+            lstm_model=lstm_model,
+            rbf_model=rbf_model,
+            simulation_config=simulation_config,
+            results=results,
+            step=step,
+            hidden=hidden,
+            extract_rbf_input=extract_rbf_input,
+            extract_lstm_input=extract_lstm_input,
         )
 
         if step > 2:
@@ -154,22 +132,3 @@ def run_simulation(
 
     return results
 
-# For validation, you can now call run_simulation with session='validation' and no optimizer
-def run_validation(
-    system: BaseSystem,
-    pid: PID,
-    lstm_model: torch.nn.Module,
-    rbf_model: torch.nn.Module,
-    simulation_config: SimulationConfig,
-    loss_function: Callable[[SimulationResults, SimulationConfig, int], torch.Tensor]
-):
-    return run_simulation(
-        system,
-        pid,
-        lstm_model,
-        rbf_model,
-        simulation_config,
-        session='validation',
-        optimizer=None,
-        loss_function=loss_function
-    )
