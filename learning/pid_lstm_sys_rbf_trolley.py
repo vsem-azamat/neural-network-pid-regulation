@@ -6,8 +6,8 @@ from entities.systems import Trolley
 from models.pid_lstm import LSTMAdaptivePID
 
 from utils import save_load
+from utils.plot import DynamicPlot
 from utils.run import run_simulation, SimulationConfig, SimulationResults
-from utils.plot import plot_simulation_results
 
 
 def extract_rbf_input(system: Trolley, results: SimulationResults) -> torch.Tensor:
@@ -58,7 +58,7 @@ if __name__ == "__main__":
     validation_time = 20.0
     train_steps = int(train_time / dt.item())
     validation_steps = int(validation_time / dt.item())
-    num_epochs = 15
+    num_epochs = 10
 
     mass, spring, friction = torch.tensor(1.0), torch.tensor(0.5), torch.tensor(0.1)
     initial_Kp, initial_Ki, initial_Kd = torch.tensor(10.0), torch.tensor(0.1), torch.tensor(1.0)
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     rbf_model = save_load.load_rbf_model('sys_rbf_trolley.pth')
 
     print("Training phase:")
-    epoch_results: list[SimulationResults] = []
+    dynamic_plot = DynamicPlot('Trolley')
     for epoch in range(num_epochs):
         print(f"Epoch {epoch + 1}/{num_epochs}")
         trolley.reset()
@@ -102,40 +102,46 @@ if __name__ == "__main__":
             extract_lstm_input=extract_lstm_input,
         )
 
-        epoch_results.append(train_results)
+        dynamic_plot.update_plot(
+            train_results, 
+            f'Epoch {epoch + 1}/{num_epochs}',
+            'train',
+            )
+
         scheduler.step()
 
     # Save the trained LSTM model
     save_load.save_model(lstm_model, 'pid_lstm_trolley.pth')
 
     # Validation phase
-    print("\nValidation phase:")
     trolley.reset()
-    setpoint_val = [torch.tensor(10.0)] * validation_steps
-    validation_config = SimulationConfig(
-        setpoints=setpoint_val,
-        dt=dt,
-        sequence_length=50
-    )
-    validation_results = run_simulation(
-        system=trolley,
-        pid=pid,
-        lstm_model=lstm_model,
-        rbf_model=rbf_model,
-        simulation_config=validation_config,
-        session='validation',
-        extract_rbf_input=extract_rbf_input,
-        extract_lstm_input=extract_lstm_input,
-    )
+    num_validation_epochs = 5
+    print("\nValidation phase:")
+    for epoch in range(num_validation_epochs):
+        print(f"Validation Epoch {epoch + 1}/{num_validation_epochs}")
+        setpoints_val = [torch.randn(1) * 10] * validation_steps
+        validation_config = SimulationConfig(
+            setpoints=setpoints_val,
+            dt=dt,
+            sequence_length=50
+        )
+        validation_results = run_simulation(
+            system=trolley,
+            pid=pid,
+            lstm_model=lstm_model,
+            rbf_model=rbf_model,
+            simulation_config=validation_config,
+            session='validation',
+            extract_rbf_input=extract_rbf_input,
+            extract_lstm_input=extract_lstm_input,
+        )
+        dynamic_plot.update_plot(
+            validation_results, 
+            f'Validation Epoch {epoch + 1}/{num_validation_epochs}',
+            'validation',
+            )
 
-    # Plot results
-    plot_simulation_results(
-        training_results=epoch_results,
-        training_config=trainining_config,
+    dynamic_plot.show()
 
-        validation_result=validation_results,
-        validation_config=validation_config,
-
-        system_name='Trolley',
-        save_name=f'pid_lstm_trolley_ep_{num_epochs}_lr_{lr}.png'
-    )
+    # Save the trained LSTM model
+    save_load.save_model(lstm_model, 'pid_lstm_trolley.pth')

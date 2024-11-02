@@ -7,6 +7,16 @@ T = TypeVar('T', torch.Tensor, np.ndarray)
 
 @dataclass
 class SimulationConfig(Generic[T]):
+    """
+    Configuration for simulation run
+
+    setpoints: List[T] - list of setpoints for the simulation
+    dt: T - time step Delta t
+    sequence_length: int - length of the sequence for LSTM
+    sequence_step: int - step for the sequence for LSTM
+    
+    """
+
     setpoints: List[T]
     dt: T
     sequence_length: int = 100

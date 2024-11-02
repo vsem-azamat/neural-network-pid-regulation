@@ -6,8 +6,8 @@ from entities.systems.thermal import Thermal
 from models.pid_lstm import LSTMAdaptivePID
 
 from utils import save_load
+from utils.plot import DynamicPlot
 from utils.run import run_simulation, SimulationConfig, SimulationResults
-from utils.plot import plot_simulation_results
 
 
 def extract_rbf_input(system: Thermal, results: SimulationResults) -> torch.Tensor:
@@ -78,7 +78,7 @@ if __name__ == "__main__":
     rbf_model = save_load.load_rbf_model('sys_rbf_thermal.pth')
 
     print("Training phase:")
-    epoch_results: list[SimulationResults] = []
+    dynamic_plot = DynamicPlot("Thermal")
     for epoch in range(num_epochs):
         print(f"Epoch {epoch + 1}/{num_epochs}")
         thermal_system.reset()
@@ -102,39 +102,48 @@ if __name__ == "__main__":
             extract_rbf_input=extract_rbf_input,
             extract_lstm_input=extract_lstm_input,
         )
-        epoch_results.append(train_results)
+
+        dynamic_plot.update_plot(
+            train_results, 
+            f'Epoch {epoch + 1}/{num_epochs}',
+            'train',
+        )
 
     # Save the trained model
     save_load.save_model(lstm_model, 'pid_lstm_thermal.pth')
 
     # Validation phase
-    print("Validation phase:")
     thermal_system.reset()
-    setpoints_val = [torch.randn(1) * 100] * validation_steps
-    validation_config = SimulationConfig(
-        setpoints=setpoints_val,
-        dt=dt,
-        sequence_length=10
-    )
-    validation_results = run_simulation(
-        system=thermal_system,
-        pid=pid,
-        lstm_model=lstm_model,
-        rbf_model=rbf_model,
-        simulation_config=validation_config,
-        session='validation',
-        extract_rbf_input=extract_rbf_input,
-        extract_lstm_input=extract_lstm_input,
-    )
+    num_validation_epochs = 5
+    print("Validation phase:")
+    for epoch in range(num_validation_epochs):
+        print(f"Validation Epoch {epoch + 1}/{num_validation_epochs}")
+        setpoints_val = [torch.randn(1) * 10] * validation_steps
+        validation_config = SimulationConfig(
+            setpoints=setpoints_val,
+            sequence_length=(len(setpoints_val)-1)//20,
+            sequence_step=10,
+            dt=dt,
+        )
+        validation_results = run_simulation(
+            system=thermal_system,
+            pid=pid,
+            lstm_model=lstm_model,
+            rbf_model=rbf_model,
+            simulation_config=validation_config,
+            session='validation',
+            extract_rbf_input=extract_rbf_input,
+            extract_lstm_input=extract_lstm_input,
+        )
+        dynamic_plot.update_plot(
+            validation_results, 
+            f'Validation Epoch {epoch + 1}/{num_validation_epochs}',
+            'validation',
+            )
 
-    # Plot results
-    plot_simulation_results(
-        training_results=epoch_results,
-        training_config=training_config,
+    dynamic_plot.show()
 
-        validation_result=validation_results,
-        validation_config=validation_config,
+    # Save the trained LSTM model
+    save_load.save_model(lstm_model, 'pid_lstm_thermal.pth')
 
-        system_name='Thermal System',
-        save_name=f'pid_lstm_thermal_ep_{num_epochs}_lr_{lr}.png'
-    )
+ 
