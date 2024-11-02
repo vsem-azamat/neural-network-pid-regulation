@@ -20,8 +20,9 @@ class Thermal(BaseSystem):
         self.thermal_capacity = thermal_capacity
         self.heat_transfer_coefficient = heat_transfer_coefficient
         self.dt = dt
+        self.temperature = torch.tensor(293.15)  # Starting at 20°C in Kelvin
+        self.temp_derivative = torch.tensor(0.) # dT/dt
 
-        self.temperature = torch.tensor(0.)  # Initial temperature in Kelvin above ambient
 
     def apply_control(self, control_output: Tensor, disturbance: Tensor = torch.tensor(0.)) -> Tensor:
         """
@@ -32,16 +33,12 @@ class Thermal(BaseSystem):
             T(t+dt) = T(t) + dT/dt * dt
         where T is the temperature, Q is the heat input, h is the heat transfer coefficient,
         and C is the thermal capacity
-        """
-        assert control_output is not None, "Control output is None"
-        
-        # Calculate the temperature derivative
-        temp_derivative = (control_output - self.heat_transfer_coefficient * self.temperature) / self.thermal_capacity + disturbance
-        
-        # Update the temperature using Euler integration
+        """        
+        temp_derivative = (control_output - self.heat_transfer_coefficient * self.temperature + disturbance) / self.thermal_capacity
+        self.temp_derivative = temp_derivative
         self.temperature = self.temperature + temp_derivative * self.dt
-        
         return self.temperature
+
 
     def get_state(self) -> Tensor:
         return self.temperature
@@ -57,7 +54,7 @@ class Thermal(BaseSystem):
     
     @property
     def dXdT(self) -> Tensor:
-        return torch.tensor(0.)
+        return self.temp_derivative
     
     @property
     def d2XdT2(self) -> Tensor:
