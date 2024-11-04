@@ -4,7 +4,7 @@ from torch.optim.optimizer import Optimizer
 
 from entities.pid import PID
 from entities.systems import BaseSystem
-from utils.loss import custom_loss
+from utils.loss import default_loss
 from utils.others import calculate_angle_2p
 from classes.simulation import SimulationConfig, SimulationResults
 
@@ -12,7 +12,7 @@ from classes.simulation import SimulationConfig, SimulationResults
 def simulation_step(
     system: BaseSystem,
     pid: PID,
-    lstm_model: torch.nn.Module,
+    lstm_model: torch.nn.Module | None,
     rbf_model: torch.nn.Module,
     simulation_config: SimulationConfig,
     results: SimulationResults,
@@ -30,17 +30,17 @@ def simulation_step(
     # >>> LSTM <<<
     lstm_input = extract_lstm_input(simulation_config, results)
 
-    if step > 10:
+    if step > 10 and lstm_model is not None:
         lstm_pred, hidden = lstm_model(
             lstm_input, 
             hidden
         )
         kp, ki, kd = lstm_pred[0] * 5
+        pid.update_gains(kp, ki, kd)
     else:
-        kp, ki, kd = torch.tensor([3, 0.1, 1.0]).unbind(0)
+        kp, ki, kd = pid.Kp.clone().detach(), pid.Ki.clone().detach(), pid.Kd.clone().detach()
 
     # >>> PID <<<
-    pid.update_gains(kp, ki, kd)
     error = (simulation_config.setpoints[step] - system.X)
     control_output = pid.compute(error, simulation_config.dt)
     system.apply_control(control_output)
@@ -75,21 +75,21 @@ def simulation_step(
 def run_simulation(
     system: BaseSystem,
     pid: PID,
-    lstm_model: torch.nn.Module,
-    rbf_model: torch.nn.Module,
     simulation_config: SimulationConfig,
     extract_rbf_input: Callable[[BaseSystem, SimulationResults], torch.Tensor],
     extract_lstm_input: Callable[[SimulationConfig, SimulationResults], torch.Tensor],
-    loss_function: Callable[[SimulationResults, SimulationConfig, int], torch.Tensor] = custom_loss,
-    session: Literal['train', 'validation'] = 'train',
+    rbf_model: torch.nn.Module,
+    lstm_model: torch.nn.Module | None = None,
+    loss_function: Callable[[SimulationResults, SimulationConfig, int], torch.Tensor] = default_loss,
+    session: Literal['train', 'validation', 'static'] = 'train',
     optimizer: Optimizer | None = None,
 ):
     # >>> Asserts <<<
     if session == 'train' and optimizer is None:
         raise ValueError("Optimizer must be provided for training session.")
 
-    if session == 'validation' and optimizer is not None:
-        print("Optimizer is not needed for validation session.")
+    if session in ['validation', 'static'] and optimizer is not None:
+        print("Optimizer is not needed for validation/static session.")
 
     torch.autograd.set_detect_anomaly(True)
 

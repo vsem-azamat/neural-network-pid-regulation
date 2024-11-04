@@ -52,7 +52,6 @@ def extract_lstm_input(
     return lstm_input
 
 
-
 def custom_loss(results: SimulationResults, config: SimulationConfig, step: int) -> torch.Tensor:
     left_slice = max(0, step - config.sequence_length)
     right_slice = step
@@ -61,28 +60,27 @@ def custom_loss(results: SimulationResults, config: SimulationConfig, step: int)
     positions = results.rbf_predictions[left_slice:right_slice:config.sequence_step]
     setpoints = results.setpoints[left_slice:right_slice:config.sequence_step]
     kp_values = results.kp_values[left_slice:right_slice:config.sequence_step]
-    # ki_values = results.ki_values[left_slice:right_slice:config.sequence_step]
-    # kd_values = results.kd_values[left_slice:right_slice:config.sequence_step]
-
+    ki_values = results.ki_values[left_slice:right_slice:config.sequence_step]
+    kd_values = results.kd_values[left_slice:right_slice:config.sequence_step]
 
     # Tensors
     positions_tensor = torch.stack(positions)
     setpoints_tensor = torch.stack(setpoints)
     kp_tensor = torch.stack(kp_values)
-    # ki_tensor = torch.stack(ki_values)
-    # kd_tensor = torch.stack(kd_values)
+    ki_tensor = torch.stack(ki_values)
+    kd_tensor = torch.stack(kd_values)
 
     # Errors
     tracking_error = torch.mean((positions_tensor - setpoints_tensor) ** 2)
     overshoot = torch.mean(torch.relu(positions_tensor - setpoints_tensor))
     kp_gain = torch.mean(kp_tensor**2)
-    # ki_gain = torch.mean(ki_tensor**2)
-    # kd_gain = torch.mean(kd_tensor**2)
+    ki_gain = torch.mean(ki_tensor**2)
+    kd_gain = torch.mean(kd_tensor**2)
 
     loss = (
-        0.5 * tracking_error +
-        0.7 * overshoot
-        # 0.2 * kp_gain
+        1 * tracking_error +
+        1 * overshoot
+        # 0.1 * kp_gain +
         # 0.1 * ki_gain + 
         # 0.1 * kd_gain
     )
@@ -92,9 +90,7 @@ def custom_loss(results: SimulationResults, config: SimulationConfig, step: int)
 if __name__ == "__main__":
     dt = torch.tensor(0.02)
     train_time = 15.
-    validation_time = 20.0
     train_steps = int(train_time / dt.item())
-    validation_steps = int(validation_time / dt.item())
     num_epochs = 10
 
     mass, spring, friction = torch.tensor(1.0), torch.tensor(0.5), torch.tensor(0.1)
@@ -124,7 +120,7 @@ if __name__ == "__main__":
         trainining_config = SimulationConfig(
             setpoints=setpoints, 
             dt=dt, 
-            sequence_length=(len(setpoints)-1)//1,
+            sequence_length=(len(setpoints)-1)//2,
             sequence_step=10
         )
         train_results = run_simulation(
@@ -142,7 +138,7 @@ if __name__ == "__main__":
 
         dynamic_plot.update_plot(
             train_results, 
-            f'Epoch {epoch + 1}/{num_epochs}',
+            f'Train {epoch + 1}/{num_epochs}',
             'train',
             )
 
@@ -152,12 +148,16 @@ if __name__ == "__main__":
     save_load.save_model(lstm_model, 'pid_lstm_trolley.pth')
 
     # Validation phase
-    trolley.reset()
     num_validation_epochs = 5
-    print("\nValidation phase:")
+    validation_time = 15.0
+    validation_steps = int(validation_time / dt.item())
+    print("\nValidation/Static phase")
     for epoch in range(num_validation_epochs):
-        print(f"Validation Epoch {epoch + 1}/{num_validation_epochs}")
+        print(f"Validation/Static Epoch {epoch + 1}/{num_validation_epochs}")
         setpoints_val = [torch.randn(1) * 10] * validation_steps
+
+        # >>> VALIDATION
+        trolley.reset()
         validation_config = SimulationConfig(
             setpoints=setpoints_val,
             dt=dt,
@@ -175,11 +175,29 @@ if __name__ == "__main__":
         )
         dynamic_plot.update_plot(
             validation_results, 
-            f'Validation Epoch {epoch + 1}/{num_validation_epochs}',
+            f'Val {epoch + 1}/{num_validation_epochs}',
             'validation',
             )
+        
+        # >>> STATIC
+        trolley.reset()
+        static_results = run_simulation(
+            system=trolley,
+            pid=pid,
+            rbf_model=rbf_model,
+            simulation_config=validation_config,
+            session='static',
+            extract_lstm_input=extract_lstm_input,
+            extract_rbf_input=extract_rbf_input,
+        )
+        dynamic_plot.update_plot(
+            static_results,
+            f'Stat {epoch + 1}/{num_validation_epochs}',
+            'static',
+        )
 
     dynamic_plot.show()
 
     # Save the trained LSTM model
     save_load.save_model(lstm_model, 'pid_lstm_trolley.pth')
+        
