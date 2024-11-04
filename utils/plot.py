@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from typing import Literal
 
 from config import cnfg
-from utils.run import SimulationResults
+from classes.simulation import SimulationResults, LearningConfig
 
 
 class DynamicPlot:
@@ -87,11 +87,12 @@ class DynamicPlot:
         plt.tight_layout(rect=[0, 0.03, 1, 0.95])  # Leave space for the main title
         plt.draw()
 
-    def save(self, save_name: str) -> None:
+    def save(self, save_name: str, learning_config: LearningConfig) -> None:
         if save_name is not None:
-            save_path = os.path.join(cnfg.PLOTS_DIR, save_name + f'_epoch_{self.epoch_count}.png')
+            formatted_name = f'{save_name}_ep_{learning_config.num_epochs}_lr_{learning_config.learning_rate}.png'
+            save_path = os.path.join(cnfg.PLOTS_DIR, formatted_name)
             self.fig.savefig(save_path, bbox_inches='tight', dpi=150)
-            print(f"Plot saved as {save_name}_epoch_{self.epoch_count}.png")
+            print(f"Plot saved to {save_path}")
 
     def show(self) -> None:
         plt.show()

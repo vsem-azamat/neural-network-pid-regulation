@@ -7,7 +7,8 @@ from models.pid_lstm import LSTMAdaptivePID
 
 from utils import save_load
 from utils.plot import DynamicPlot
-from utils.run import run_simulation, SimulationConfig, SimulationResults
+from utils.run import run_simulation
+from classes.simulation import SimulationConfig, SimulationResults, LearningConfig
 
 
 def extract_rbf_input(system: Thermal, results: SimulationResults) -> torch.Tensor:
@@ -51,10 +52,13 @@ def extract_lstm_input(
 
 
 if __name__ == "__main__":
-    dt = torch.tensor(0.2)  # Increased time step for thermal system
-    train_time = 300.  # 1 hour of training time
-    train_steps = int(train_time / dt.item())
-    num_epochs = 10
+    learning_config = LearningConfig(
+        dt=torch.tensor(0.2),
+        num_epochs=8,
+        train_time=300.,
+        learning_rate=0.01,
+    )
+    dt, num_epochs, train_steps, lr = learning_config.dt, learning_config.num_epochs, learning_config.train_steps, learning_config.learning_rate
 
     thermal_capacity = torch.tensor(1000.0)  # J/K
     heat_transfer_coefficient = torch.tensor(10.0)  # W/K
@@ -63,13 +67,13 @@ if __name__ == "__main__":
 
     thermal = Thermal(thermal_capacity, heat_transfer_coefficient, dt)
     pid = PID(initial_Kp, initial_Ki, initial_Kd)
-    pid.set_limits(torch.tensor(200.0), torch.tensor(0.0))  # Heat input can't be negative.
+    pid.set_limits(torch.tensor(100000), torch.tensor(0.0))  # Heat input can't be negative. [W]
     lstm_model = LSTMAdaptivePID(input_size, hidden_size, output_size)
-    lr = 0.01
     optimizer = optim.SGD(
         lstm_model.parameters(), 
         lr=lr,
     )
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
     rbf_model = save_load.load_rbf_model('sys_rbf_thermal.pth')
 
     print("Training phase:")
@@ -78,7 +82,7 @@ if __name__ == "__main__":
         print(f"Epoch {epoch + 1}/{num_epochs}")
         thermal.reset()
         
-        setpoints = [torch.randn(1) * 100] * train_steps
+        setpoints = [torch.rand(1) * 200] * train_steps  # [0, 200] degC
         training_config = SimulationConfig(
             setpoints=setpoints, 
             dt=dt,
@@ -102,20 +106,24 @@ if __name__ == "__main__":
             'train',
         )
 
+        scheduler.step()
+        torch.clear_autocast_cache()
+
     # Save the trained model
     save_load.save_model(lstm_model, 'pid_lstm_thermal.pth')
 
     # Validation phase
-    num_validation_epochs = 5
+    num_validation_epochs = 1
     validation_time = 300
     validation_steps = int(validation_time / dt.item())
     print("Validation phase:")
     for epoch in range(num_validation_epochs):
         print(f"Validation Epoch {epoch + 1}/{num_validation_epochs}")
-        setpoints_val = [torch.randn(1) * 10] * validation_steps
+        setpoints_val = [torch.rand(1) * 200] * validation_steps # [0, 200] degC
 
         # >>> VALIDATION
         thermal.reset()
+        pid.update_gains(initial_Kp, initial_Ki, initial_Kd)
         validation_config = SimulationConfig(
             setpoints=setpoints_val,
             sequence_length=(len(setpoints_val)-1)//20,
@@ -140,10 +148,14 @@ if __name__ == "__main__":
         
         # >>> STATIC
         thermal.reset()
+        pid.update_gains(
+            torch.tensor(20.),
+            torch.tensor(0.),
+            torch.tensor(0.),
+        ) # These are the optimal gains
         static_results = run_simulation(
             system=thermal,
             pid=pid,
-            lstm_model=lstm_model,
             rbf_model=rbf_model,
             simulation_config=validation_config,
             session='static',
@@ -157,7 +169,7 @@ if __name__ == "__main__":
             )
 
     dynamic_plot.show()
-    dynamic_plot.save("pid_lstm_thermal")
+    dynamic_plot.save("pid_lstm_thermal", learning_config)
 
     # Save the trained LSTM model
     save_load.save_model(lstm_model, 'pid_lstm_thermal.pth')

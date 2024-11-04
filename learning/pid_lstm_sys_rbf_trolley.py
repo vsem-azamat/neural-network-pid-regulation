@@ -7,7 +7,8 @@ from models.pid_lstm import LSTMAdaptivePID
 
 from utils import save_load
 from utils.plot import DynamicPlot
-from utils.run import run_simulation, SimulationConfig, SimulationResults
+from utils.run import run_simulation
+from classes.simulation import SimulationConfig, SimulationResults, LearningConfig
 
 
 def extract_rbf_input(system: Trolley, results: SimulationResults) -> torch.Tensor:
@@ -88,10 +89,14 @@ def custom_loss(results: SimulationResults, config: SimulationConfig, step: int)
 
 
 if __name__ == "__main__":
-    dt = torch.tensor(0.02)
-    train_time = 15.
-    train_steps = int(train_time / dt.item())
-    num_epochs = 10
+    learning_config = LearningConfig(
+        dt=torch.tensor(0.02),
+        num_epochs=10,
+        train_time=15.,
+        learning_rate=0.002,
+    )
+    dt, num_epochs, train_steps = learning_config.dt, learning_config.num_epochs, learning_config.train_steps
+
 
     mass, spring, friction = torch.tensor(1.0), torch.tensor(0.5), torch.tensor(0.1)
     initial_Kp, initial_Ki, initial_Kd = torch.tensor(10.0), torch.tensor(0.1), torch.tensor(1.0)
@@ -197,7 +202,7 @@ if __name__ == "__main__":
         )
 
     dynamic_plot.show()
-    dynamic_plot.save("pid_lstm_trolley")
+    dynamic_plot.save("pid_lstm_trolley", learning_config)
 
     # Save the trained LSTM model
     save_load.save_model(lstm_model, 'pid_lstm_trolley.pth')

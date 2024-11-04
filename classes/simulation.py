@@ -7,6 +7,18 @@ T = TypeVar("T", torch.Tensor, np.ndarray)
 
 
 @dataclass
+class LearningConfig:
+    dt: torch.Tensor
+    num_epochs: int
+    train_time: float
+    learning_rate: float
+
+    @property
+    def train_steps(self) -> int:
+        return int(self.train_time / self.dt)
+
+
+@dataclass
 class SimulationConfig(Generic[T]):
     """
     Configuration for simulation run
