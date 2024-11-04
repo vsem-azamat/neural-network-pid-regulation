@@ -51,11 +51,34 @@ def extract_lstm_input(
     return lstm_input
 
 
+def custom_loss(results: SimulationResults, config: SimulationConfig, step: int) -> torch.Tensor:
+    left_slice = max(0, step - config.sequence_length)
+    right_slice = step
+
+    # Slices
+    positions = results.rbf_predictions[left_slice:right_slice]
+    setpoints = results.setpoints[left_slice:right_slice]
+
+    # Tensors
+    positions_tensor = torch.stack(positions)
+    setpoints_tensor = torch.stack(setpoints)
+
+    # Errors
+    tracking_error = torch.mean((positions_tensor - setpoints_tensor) ** 2)
+    overshoot = torch.mean(torch.relu(positions_tensor - setpoints_tensor))
+
+    loss = (
+        1 * tracking_error +
+        1 * overshoot
+    )
+    return loss
+
+
 if __name__ == "__main__":
     learning_config = LearningConfig(
         dt=torch.tensor(0.2),
-        num_epochs=8,
-        train_time=300.,
+        num_epochs=7,
+        train_time=200.,
         learning_rate=0.01,
     )
     dt, num_epochs, train_steps, lr = learning_config.dt, learning_config.num_epochs, learning_config.train_steps, learning_config.learning_rate
@@ -99,6 +122,7 @@ if __name__ == "__main__":
             session='train',
             extract_rbf_input=extract_rbf_input,
             extract_lstm_input=extract_lstm_input,
+            loss_function=custom_loss,
         )
         dynamic_plot.update_plot(
             train_results, 
