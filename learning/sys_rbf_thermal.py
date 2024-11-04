@@ -9,23 +9,33 @@ from entities.systems.thermal import Thermal
 from utils import save_load
 
 
-def generate_training_data(thermal_system, num_samples=2000):
-    X = torch.zeros((num_samples, 2))  # [temperature, control_input]
+def generate_training_data(thermal_system: Thermal, num_samples: int = 1000):
+    X = torch.zeros((num_samples, 3))  # [temperature, temp_derivative, control_input]
     y = torch.zeros((num_samples, 1))  # next_temperature
 
     for i in range(num_samples):
-        temperature = torch.rand(1) * 50.0 + 20.0
-        control_input = torch.rand(1) * 1000.0  # Random control input between 0 and 1000
+        temperature = torch.rand(1) * 50.0 + 20.0 # [20, 70]
+        temp_derivative = torch.rand(1) * 10.0 - 5.0 # [-5, 5]
+        control_input = torch.rand(1) * 1000.0  # [0, 1000]
 
         thermal_system.temperature = temperature
+        thermal_system.temp_derivative = temp_derivative
         next_temperature = thermal_system.apply_control(control_input)
 
-        X[i] = torch.tensor([temperature.item(), control_input.item()])
+        X[i] = torch.tensor([temperature.item(), temp_derivative.item(), control_input.item()])
         y[i] = next_temperature
 
     return X, y
 
-def train_rbf_model(model, X, y, num_epochs=500, batch_size=64, learning_rate=0.001):
+
+def train_rbf_model(
+    model: SystemRBFModel, 
+    X: torch.Tensor, 
+    y: torch.Tensor, 
+    num_epochs: int = 500, 
+    batch_size: int = 64, 
+    learning_rate: float = 0.001
+    ) -> list:
     criterion = nn.MSELoss()
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -56,6 +66,7 @@ def train_rbf_model(model, X, y, num_epochs=500, batch_size=64, learning_rate=0.
 
     return losses
 
+
 def plot_training_loss(losses):
     plt.figure(figsize=(10, 5))
     plt.plot(losses)
@@ -66,20 +77,23 @@ def plot_training_loss(losses):
     plt.grid(True)
     plt.show()
 
-def compare_predictions(model, thermal_system: Thermal, num_steps=200):
+
+def compare_predictions(model, thermal_system: Thermal, num_steps: int = 200):
     initial_temperature = torch.tensor(25.0)
+    initial_temp_derivative = torch.tensor(0.0)
     control_inputs = torch.linspace(0, 1000, num_steps)
 
     rbf_temperatures = []
     actual_temperatures = []
 
     thermal_system.temperature = initial_temperature
+    thermal_system.temp_derivative = initial_temp_derivative
 
     for control in control_inputs:
         # RBF model prediction
         with torch.no_grad():
-            rbf_input = torch.tensor([[thermal_system.X.item(), control.item()]])
-            rbf_next_temp = model(rbf_input)
+            rbf_input = torch.tensor([[thermal_system.X.item(), thermal_system.dXdT.item(), control.item()]])
+            rbf_next_temp = model(rbf_input).item()
             rbf_temperatures.append(rbf_next_temp)
 
         # Actual thermal system
@@ -91,6 +105,7 @@ def compare_predictions(model, thermal_system: Thermal, num_steps=200):
 
     return control_inputs.numpy(), rbf_temperatures, actual_temperatures
 
+
 def plot_comparison(control_inputs, rbf_temperatures, actual_temperatures):
     plt.figure(figsize=(12, 6))
     plt.plot(control_inputs, rbf_temperatures, label='RBF Model', marker='o', linestyle='-', markersize=3)
@@ -101,6 +116,7 @@ def plot_comparison(control_inputs, rbf_temperatures, actual_temperatures):
     plt.legend()
     plt.grid(True)
     plt.show()
+
 
 if __name__ == "__main__":
     # Initialize the Thermal system
@@ -121,7 +137,7 @@ if __name__ == "__main__":
 
     # Initialize and train the RBF model
     rbf_model = SystemRBFModel(
-        input_size=2,
+        input_size=3,
         input_mean=X_mean,
         input_std=X_std,
         output_mean=y_mean,
@@ -132,8 +148,8 @@ if __name__ == "__main__":
     losses = train_rbf_model(
         rbf_model, 
         X, y, 
-        num_epochs=400,
-        batch_size=64,
+        num_epochs=1000,
+        batch_size=32,
         learning_rate=0.001
     )
 
