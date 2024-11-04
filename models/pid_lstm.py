@@ -1,6 +1,7 @@
 import torch
 from torch import nn
 
+
 class LSTMAdaptivePID(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(LSTMAdaptivePID, self).__init__()
@@ -11,4 +12,3 @@ class LSTMAdaptivePID(nn.Module):
         lstm_out, hidden = self.lstm(x, hidden)
         pid_params = self.linear(lstm_out[:, -1, :])
         return torch.exp(pid_params), hidden  # Ensure positive PID parameters
-    

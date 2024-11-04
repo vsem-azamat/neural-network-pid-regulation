@@ -5,14 +5,15 @@ from .base import BaseSystem
 
 
 class NonLinearPendulumCart(BaseSystem):
-    def __init__(self,
-                 cart_mass: Tensor,
-                 pendulum_mass: Tensor,
-                 pendulum_length: Tensor,
-                 friction: Tensor,
-                 gravity: Tensor,
-                 dt: Tensor
-                 ) -> None:
+    def __init__(
+        self,
+        cart_mass: Tensor,
+        pendulum_mass: Tensor,
+        pendulum_length: Tensor,
+        friction: Tensor,
+        gravity: Tensor,
+        dt: Tensor,
+    ) -> None:
         """
         Args:
             cart_mass (float): mass of the cart
@@ -29,19 +30,21 @@ class NonLinearPendulumCart(BaseSystem):
         self.g = gravity
         self.dt = dt
 
-        self.x = torch.tensor(0.)  # cart position
-        self.x_dot = torch.tensor(0.)  # cart velocity
-        self.theta = torch.tensor(0.)  # pendulum angle
-        self.theta_dot = torch.tensor(0.)  # pendulum angular velocity
+        self.x = torch.tensor(0.0)  # cart position
+        self.x_dot = torch.tensor(0.0)  # cart velocity
+        self.theta = torch.tensor(0.0)  # pendulum angle
+        self.theta_dot = torch.tensor(0.0)  # pendulum angular velocity
 
-    def apply_control(self, control_output: Tensor, disturbance: Tensor = torch.tensor(0.)) -> Tensor:
+    def apply_control(
+        self, control_output: Tensor, disturbance: Tensor = torch.tensor(0.0)
+    ) -> Tensor:
         """
         Update the state of the system based on the control output
-        
+
         Equations of motion:
         (M+m)x'' + b*x' + m*L*θ''*cos(θ) - m*L*θ'²*sin(θ) = F + d
         (I+m*L²)θ'' + m*g*L*sin(θ) + m*L*x''*cos(θ) = 0
-        
+
         where x is cart position, θ is pendulum angle, F is control force, and d is disturbance
         """
         assert control_output is not None, "Control output is None"
@@ -53,10 +56,14 @@ class NonLinearPendulumCart(BaseSystem):
         M, m, L, b, g = self.M, self.m, self.L, self.b, self.g
 
         # Compute accelerations
-        denominator = M + m*torch.sin(theta)**2
-        x_ddot = (F + m*L*theta_dot**2*torch.sin(theta) - b*x_dot - 
-                  m*g*torch.sin(theta)*torch.cos(theta)) / denominator
-        theta_ddot = (-g*torch.sin(theta) - x_ddot*torch.cos(theta)) / L
+        denominator = M + m * torch.sin(theta) ** 2
+        x_ddot = (
+            F
+            + m * L * theta_dot**2 * torch.sin(theta)
+            - b * x_dot
+            - m * g * torch.sin(theta) * torch.cos(theta)
+        ) / denominator
+        theta_ddot = (-g * torch.sin(theta) - x_ddot * torch.cos(theta)) / L
 
         # Update state using Euler integration
         self.x = x + x_dot * self.dt
@@ -79,7 +86,7 @@ class NonLinearPendulumCart(BaseSystem):
 
     def reset(self) -> None:
         """Reset the system state to initial conditions"""
-        self.x = torch.tensor(0., dtype=torch.float32)
-        self.x_dot = torch.tensor(0., dtype=torch.float32)
+        self.x = torch.tensor(0.0, dtype=torch.float32)
+        self.x_dot = torch.tensor(0.0, dtype=torch.float32)
         self.theta = torch.tensor(0.1, dtype=torch.float32)  # Small initial angle
-        self.theta_dot = torch.tensor(0., dtype=torch.float32)
+        self.theta_dot = torch.tensor(0.0, dtype=torch.float32)

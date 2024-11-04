@@ -1,23 +1,26 @@
 import torch
 from torch import nn
 
+
 class InputNormalizationLayer(nn.Module):
     def __init__(self, mean, std):
         super(InputNormalizationLayer, self).__init__()
-        self.register_buffer('mean', mean)
-        self.register_buffer('std', std + 1e-8)  # Add epsilon to avoid division by zero
+        self.register_buffer("mean", mean)
+        self.register_buffer("std", std + 1e-8)  # Add epsilon to avoid division by zero
 
     def forward(self, x):
         return (x - self.mean) / self.std
 
+
 class OutputDenormalizationLayer(nn.Module):
     def __init__(self, mean, std):
         super(OutputDenormalizationLayer, self).__init__()
-        self.register_buffer('mean', mean)
-        self.register_buffer('std', std + 1e-8)
+        self.register_buffer("mean", mean)
+        self.register_buffer("std", std + 1e-8)
 
     def forward(self, x):
         return x * self.std + self.mean
+
 
 class RBFLayer(nn.Module):
     def __init__(self, in_features, out_features):
@@ -39,25 +42,30 @@ class RBFLayer(nn.Module):
         distances = (x - c).pow(2).sum(-1) * self.sigmas.unsqueeze(0)
         return torch.exp(-distances)
 
+
 class SystemRBFModel(nn.Module):
-    def __init__(self, 
+    def __init__(
+        self,
         input_mean,
-        input_std, 
-        output_mean, 
-        output_std, 
-        hidden_features=50, 
-        input_size=4, 
-        output_size=1) -> None:
+        input_std,
+        output_mean,
+        output_std,
+        hidden_features=50,
+        input_size=4,
+        output_size=1,
+    ) -> None:
         super(SystemRBFModel, self).__init__()
         self.input_mean = nn.Parameter(input_mean, requires_grad=False)
         self.input_std = nn.Parameter(input_std, requires_grad=False)
         self.output_mean = nn.Parameter(output_mean, requires_grad=False)
         self.output_std = nn.Parameter(output_std, requires_grad=False)
-        
+
         self.input_norm = InputNormalizationLayer(self.input_mean, self.input_std)
         self.rbf = RBFLayer(in_features=input_size, out_features=hidden_features)
         self.linear = nn.Linear(hidden_features, output_size)
-        self.output_denorm = OutputDenormalizationLayer(self.output_mean, self.output_std)
+        self.output_denorm = OutputDenormalizationLayer(
+            self.output_mean, self.output_std
+        )
 
     def forward(self, x):
         x = self.input_norm(x)

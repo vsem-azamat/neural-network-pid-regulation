@@ -32,4 +32,3 @@ class PIDNN(nn.Module):
         x = self.fc2(x)
         x = self.act_tahn(x)
         return x
-
