@@ -14,7 +14,6 @@ def extract_rbf_input(system: Thermal, results: SimulationResults) -> torch.Tens
     rbf_input = torch.tensor([
         system.X, 
         system.dXdT, 
-        # system.d2XdT2, 
         # results.control_outputs[-1] if results.control_outputs else 0.0
     ])
     return rbf_input.unsqueeze(0)
@@ -51,15 +50,13 @@ def extract_lstm_input(
     return lstm_input
 
 
-
-
 if __name__ == "__main__":
     dt = torch.tensor(0.2)  # Increased time step for thermal system
     train_time = 300.  # 1 hour of training time
     validation_time = 300
     train_steps = int(train_time / dt.item())
     validation_steps = int(validation_time / dt.item())
-    num_epochs = 5
+    num_epochs = 20
 
     thermal_capacity = torch.tensor(1000.0)  # J/K
     heat_transfer_coefficient = torch.tensor(10.0)  # W/K
@@ -68,9 +65,9 @@ if __name__ == "__main__":
 
     thermal_system = Thermal(thermal_capacity, heat_transfer_coefficient, dt)
     pid = PID(initial_Kp, initial_Ki, initial_Kd)
-    pid.set_limits(torch.tensor(1000.0), torch.tensor(0.0))  # Heat input can't be negative
+    pid.set_limits(torch.tensor(100.0), torch.tensor(0.0))  # Heat input can't be negative
     lstm_model = LSTMAdaptivePID(input_size, hidden_size, output_size)
-    lr = 0.001
+    lr = 0.01
     optimizer = optim.SGD(
         lstm_model.parameters(), 
         lr=lr,
@@ -87,7 +84,7 @@ if __name__ == "__main__":
         training_config = SimulationConfig(
             setpoints=setpoints, 
             dt=dt,
-            sequence_length=(len(setpoints)-1)//1,
+            sequence_length=(len(setpoints)-1)//2,
             sequence_step=10,
         )
 
