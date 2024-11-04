@@ -93,10 +93,9 @@ if __name__ == "__main__":
         dt=torch.tensor(0.02),
         num_epochs=10,
         train_time=15.,
-        learning_rate=0.002,
+        learning_rate=0.01,
     )
-    dt, num_epochs, train_steps = learning_config.dt, learning_config.num_epochs, learning_config.train_steps
-
+    dt, num_epochs, train_steps, lr = learning_config.dt, learning_config.num_epochs, learning_config.train_steps, learning_config.learning_rate
 
     mass, spring, friction = torch.tensor(1.0), torch.tensor(0.5), torch.tensor(0.1)
     initial_Kp, initial_Ki, initial_Kd = torch.tensor(10.0), torch.tensor(0.1), torch.tensor(1.0)
@@ -106,7 +105,6 @@ if __name__ == "__main__":
     pid = PID(initial_Kp, initial_Ki, initial_Kd)
     pid.set_limits(torch.tensor(50.0), torch.tensor(-50.0))
     lstm_model = LSTMAdaptivePID(input_size, hidden_size, output_size)
-    lr = 0.002
     optimizer = optim.SGD(
         lstm_model.parameters(), 
         lr=lr,
@@ -126,7 +124,8 @@ if __name__ == "__main__":
             setpoints=setpoints, 
             dt=dt, 
             sequence_length=(len(setpoints)-1)//1,
-            sequence_step=10
+            sequence_step=10,
+            pid_gain_factor=10,
         )
         train_results = run_simulation(
             system=trolley,
@@ -166,7 +165,8 @@ if __name__ == "__main__":
         validation_config = SimulationConfig(
             setpoints=setpoints_val,
             dt=dt,
-            sequence_length=50
+            sequence_length=50,
+            pid_gain_factor=10,
         )
         validation_results = run_simulation(
             system=trolley,
