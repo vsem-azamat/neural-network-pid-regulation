@@ -35,7 +35,7 @@ def simulation_step(
             lstm_input, 
             hidden
         )
-        kp, ki, kd = lstm_pred[0] * 5
+        kp, ki, kd = lstm_pred[0] * simulation_config.pid_gain_factor
         pid.update_gains(kp, ki, kd)
     else:
         kp, ki, kd = pid.Kp.clone().detach(), pid.Ki.clone().detach(), pid.Kd.clone().detach()
@@ -90,6 +90,9 @@ def run_simulation(
 
     if session in ['validation', 'static'] and optimizer is not None:
         print("Optimizer is not needed for validation/static session.")
+
+    if session == 'static' and lstm_model is not None:
+        raise ValueError("LSTM model is not needed for static session.")
 
     torch.autograd.set_detect_anomaly(True)
 

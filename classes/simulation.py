@@ -15,13 +15,14 @@ class SimulationConfig(Generic[T]):
     dt: T - time step Delta t
     sequence_length: int - length of the sequence for LSTM
     sequence_step: int - step for the sequence for LSTM
-
+    pid_gain_factor: int - multiplier for PID gains
     """
 
     setpoints: List[T]
     dt: T
     sequence_length: int = 100
     sequence_step: int = 5
+    pid_gain_factor: int = 100
 
 
 @dataclass
