@@ -49,7 +49,7 @@ class DynamicPlot:
         self.axs[0, col].plot(time_points, setpoints, linestyle='--', color='red', alpha=alpha)
         self.axs[0, col].set_ylabel('Position')
         self.axs[0, col].set_title(f'{session.capitalize()}: {self.system_name} Position')
-        self.axs[0, col].legend()
+        self.axs[0, col].legend(loc='upper right')
         self.axs[0, col].grid()
 
         # Plot control outputs
