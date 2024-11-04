@@ -14,7 +14,7 @@ def extract_rbf_input(system: Thermal, results: SimulationResults) -> torch.Tens
     rbf_input = torch.tensor([
         system.X, 
         system.dXdT, 
-        # results.control_outputs[-1] if results.control_outputs else 0.0
+        results.control_outputs[-1] if results.control_outputs else 0.0
     ])
     return rbf_input.unsqueeze(0)
 
@@ -53,19 +53,17 @@ def extract_lstm_input(
 if __name__ == "__main__":
     dt = torch.tensor(0.2)  # Increased time step for thermal system
     train_time = 300.  # 1 hour of training time
-    validation_time = 300
     train_steps = int(train_time / dt.item())
-    validation_steps = int(validation_time / dt.item())
-    num_epochs = 20
+    num_epochs = 10
 
     thermal_capacity = torch.tensor(1000.0)  # J/K
     heat_transfer_coefficient = torch.tensor(10.0)  # W/K
     initial_Kp, initial_Ki, initial_Kd = torch.tensor(100.0), torch.tensor(1.0), torch.tensor(10.0)
     input_size, hidden_size, output_size = 4, 20, 3
 
-    thermal_system = Thermal(thermal_capacity, heat_transfer_coefficient, dt)
+    thermal = Thermal(thermal_capacity, heat_transfer_coefficient, dt)
     pid = PID(initial_Kp, initial_Ki, initial_Kd)
-    pid.set_limits(torch.tensor(100.0), torch.tensor(0.0))  # Heat input can't be negative
+    pid.set_limits(torch.tensor(200.0), torch.tensor(0.0))  # Heat input can't be negative.
     lstm_model = LSTMAdaptivePID(input_size, hidden_size, output_size)
     lr = 0.01
     optimizer = optim.SGD(
@@ -78,18 +76,17 @@ if __name__ == "__main__":
     dynamic_plot = DynamicPlot("Thermal")
     for epoch in range(num_epochs):
         print(f"Epoch {epoch + 1}/{num_epochs}")
-        thermal_system.reset()
+        thermal.reset()
         
         setpoints = [torch.randn(1) * 100] * train_steps
         training_config = SimulationConfig(
             setpoints=setpoints, 
             dt=dt,
-            sequence_length=(len(setpoints)-1)//2,
+            sequence_length=(len(setpoints)-1)//1,
             sequence_step=10,
         )
-
         train_results = run_simulation(
-            system=thermal_system,
+            system=thermal,
             pid=pid,
             lstm_model=lstm_model,
             rbf_model=rbf_model,
@@ -99,10 +96,9 @@ if __name__ == "__main__":
             extract_rbf_input=extract_rbf_input,
             extract_lstm_input=extract_lstm_input,
         )
-
         dynamic_plot.update_plot(
             train_results, 
-            f'Epoch {epoch + 1}/{num_epochs}',
+            f'Train {epoch + 1}/{num_epochs}',
             'train',
         )
 
@@ -110,12 +106,16 @@ if __name__ == "__main__":
     save_load.save_model(lstm_model, 'pid_lstm_thermal.pth')
 
     # Validation phase
-    thermal_system.reset()
     num_validation_epochs = 5
+    validation_time = 300
+    validation_steps = int(validation_time / dt.item())
     print("Validation phase:")
     for epoch in range(num_validation_epochs):
         print(f"Validation Epoch {epoch + 1}/{num_validation_epochs}")
         setpoints_val = [torch.randn(1) * 10] * validation_steps
+
+        # >>> VALIDATION
+        thermal.reset()
         validation_config = SimulationConfig(
             setpoints=setpoints_val,
             sequence_length=(len(setpoints_val)-1)//20,
@@ -123,7 +123,7 @@ if __name__ == "__main__":
             dt=dt,
         )
         validation_results = run_simulation(
-            system=thermal_system,
+            system=thermal,
             pid=pid,
             lstm_model=lstm_model,
             rbf_model=rbf_model,
@@ -134,13 +134,30 @@ if __name__ == "__main__":
         )
         dynamic_plot.update_plot(
             validation_results, 
-            f'Validation Epoch {epoch + 1}/{num_validation_epochs}',
+            f'Val {epoch + 1}/{num_validation_epochs}',
             'validation',
+            )
+        
+        # >>> STATIC
+        thermal.reset()
+        static_results = run_simulation(
+            system=thermal,
+            pid=pid,
+            lstm_model=lstm_model,
+            rbf_model=rbf_model,
+            simulation_config=validation_config,
+            session='static',
+            extract_rbf_input=extract_rbf_input,
+            extract_lstm_input=extract_lstm_input,
+        )
+        dynamic_plot.update_plot(
+            static_results, 
+            f'Static {epoch + 1}/{num_validation_epochs}',
+            'static',
             )
 
     dynamic_plot.show()
+    dynamic_plot.save("pid_lstm_thermal.png")
 
     # Save the trained LSTM model
     save_load.save_model(lstm_model, 'pid_lstm_thermal.pth')
-
- 
