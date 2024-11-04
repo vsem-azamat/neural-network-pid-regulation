@@ -8,25 +8,27 @@ from models.sys_rbf import SystemRBFModel
 from entities.systems.trolley import Trolley
 from utils import save_load
 
-def generate_training_data(trolley, num_samples=2000):  # Increased data samples
+
+def generate_training_data(trolley: Trolley, num_samples: int = 1000):
     X = torch.zeros((num_samples, 4))  # [position, velocity, acceleration, control_input]
     y = torch.zeros((num_samples, 1))  # next_position
 
     for i in range(num_samples):
-        position = torch.rand(1) * 200 - 100  # Random position between -10 and 10
-        velocity = torch.rand(1) * 200 - 100  # Random velocity between -10 and 10
-        acceleration = torch.rand(1) * 200 - 100  # Random acceleration between -10 and 10
-        control_input = torch.rand(1) * 200 - 100  # Random control input between -10 and 10
+        position = torch.rand(1) * 200 - 100  # [0, 100]
+        velocity = torch.rand(1) * 200 - 100  # [-100, 100]
+        acceleration = torch.rand(1) * 200 - 100  # [-100, 100]
+        control_input = torch.rand(1) * 200 - 100  # [-100, 100]
 
         trolley.position = position
         trolley.velocity = velocity
-        trolley.acceleration = acceleration  # Assuming the trolley has an acceleration attribute
+        trolley.acceleration = acceleration
         next_position = trolley.apply_control(control_input)
 
         X[i] = torch.tensor([position.item(), velocity.item(), acceleration.item(), control_input.item()])
         y[i] = next_position
 
     return X, y
+
 
 def train_rbf_model(model, X, y, num_epochs=500, batch_size=64, learning_rate=0.001):
     criterion = nn.MSELoss()
@@ -59,6 +61,7 @@ def train_rbf_model(model, X, y, num_epochs=500, batch_size=64, learning_rate=0.
 
     return losses
 
+
 def plot_training_loss(losses):
     plt.figure(figsize=(10, 5))
     plt.plot(losses)
@@ -68,6 +71,7 @@ def plot_training_loss(losses):
     plt.yscale('log')
     plt.grid(True)
     plt.show()
+
 
 def compare_predictions(model, trolley: Trolley, num_steps=200):
     initial_position = torch.tensor(0.5)
@@ -80,7 +84,7 @@ def compare_predictions(model, trolley: Trolley, num_steps=200):
 
     trolley.position = initial_position
     trolley.velocity = initial_velocity
-    trolley.acceleration = initial_acceleration  # Initialize the trolley's acceleration
+    trolley.acceleration = initial_acceleration
 
     for control in control_inputs:
         # RBF model prediction
@@ -98,6 +102,7 @@ def compare_predictions(model, trolley: Trolley, num_steps=200):
 
     return control_inputs.numpy(), rbf_positions, actual_positions
 
+
 def plot_comparison(control_inputs, rbf_positions, actual_positions):
     plt.figure(figsize=(12, 6))
     plt.plot(control_inputs, rbf_positions, label='RBF Model', marker='o', linestyle='-', markersize=3)
@@ -108,6 +113,7 @@ def plot_comparison(control_inputs, rbf_positions, actual_positions):
     plt.legend()
     plt.grid(True)
     plt.show()
+
 
 if __name__ == "__main__":
     # Initialize the Trolley system
