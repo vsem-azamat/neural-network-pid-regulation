@@ -120,7 +120,7 @@ if __name__ == "__main__":
         trainining_config = SimulationConfig(
             setpoints=setpoints, 
             dt=dt, 
-            sequence_length=(len(setpoints)-1)//2,
+            sequence_length=(len(setpoints)-1)//1,
             sequence_step=10
         )
         train_results = run_simulation(
@@ -197,7 +197,7 @@ if __name__ == "__main__":
         )
 
     dynamic_plot.show()
+    dynamic_plot.save("pid_lstm_trolley")
 
     # Save the trained LSTM model
     save_load.save_model(lstm_model, 'pid_lstm_trolley.pth')
-        

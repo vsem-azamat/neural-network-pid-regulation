@@ -157,7 +157,7 @@ if __name__ == "__main__":
             )
 
     dynamic_plot.show()
-    dynamic_plot.save("pid_lstm_thermal.png")
+    dynamic_plot.save("pid_lstm_thermal")
 
     # Save the trained LSTM model
     save_load.save_model(lstm_model, 'pid_lstm_thermal.pth')
