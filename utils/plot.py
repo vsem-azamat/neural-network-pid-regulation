@@ -264,6 +264,7 @@ def plot_rbf_training_results(
     Y_actual,
     losses: list[float],
     system_name="<System>",
+    state_label="Position",
 ) -> None:
     fig, axs = plt.subplots(1, 2, figsize=(20, 6))
     axs[0].plot(
@@ -284,7 +285,7 @@ def plot_rbf_training_results(
     )
     axs[0].set_title(f"Comparison of RBF Model vs Actual {system_name} System")
     axs[0].set_xlabel("Control Input")
-    axs[0].set_ylabel("Position")
+    axs[0].set_ylabel(state_label)
     axs[0].legend()
     axs[0].grid(True)
 
