@@ -13,7 +13,7 @@ class DynamicPlot:
         # Create a figure with 5 rows and 3 columns (train, validation, static)
         self.fig, self.axs = plt.subplots(5, 3, figsize=(30, 35))
         self.fig.suptitle(
-            f"Adaptive LSTM-PID {system_name} Control Simulation", fontsize=20
+            f"Adaptive LSTM-PID {system_name} Control Simulation", fontsize=16
         )
         self.colors = [
             "tab:blue",
@@ -31,6 +31,15 @@ class DynamicPlot:
 
         # Adjust spacing between subplots
         self.fig.subplots_adjust(wspace=0.4, hspace=0.6)
+
+        # Initialize legends trackers
+        self.legend_added = {
+            "position": False,
+            "control_output": False,
+            "pid_parameters": False,
+            "loss": False,
+            "error": False,
+        }
 
     def update_plot(
         self,
@@ -64,84 +73,120 @@ class DynamicPlot:
 
         # Plot positions in the first row
         ax_position = self.axs[0, col]
+        # Plot actual positions
         ax_position.plot(
             time_points,
             positions,
-            label=f"{label} Actual",
+            label=f"Actual {self.system_name}",
             alpha=alpha,
             color=color,
             linewidth=line_width,
         )
+        # Plot RBF predictions
         ax_position.plot(
             time_points,
             positions_rbf,
             linestyle=":",
             alpha=alpha,
-            color="black",
+            color=color,
             linewidth=line_width,
-            label=f"{label} RBF Prediction",
         )
-        ax_position.plot(
-            time_points,
-            setpoints,
-            linestyle="--",
-            color="red",
-            alpha=0.7,
-            linewidth=line_width,
-            label="Setpoint",
-        )
-        ax_position.set_ylabel("Position", fontsize=14)
+        # Plot setpoints (only once)
+        if not self.legend_added["position"]:
+            ax_position.plot(
+                time_points,
+                setpoints,
+                linestyle="--",
+                color="red",
+                alpha=0.7,
+                linewidth=line_width,
+                label="Setpoint",
+            )
+        else:
+            ax_position.plot(
+                time_points,
+                setpoints,
+                linestyle="--",
+                color="red",
+                alpha=0.7,
+                linewidth=line_width,
+            )
+        ax_position.set_ylabel("Position", fontsize=12)
         ax_position.set_title(
-            f"{session.capitalize()}: {self.system_name} Position", fontsize=16
+            f"{session.capitalize()}: {self.system_name} Position", fontsize=14
         )
-        ax_position.legend(loc="upper right", fontsize=10)
+        # Add legend only once
+        if not self.legend_added["position"]:
+            ax_position.legend(loc="upper right", fontsize=10)
+            self.legend_added["position"] = True
         ax_position.grid(True, which="both", linestyle="--", linewidth=0.5)
 
         # Plot control outputs in the second row
         ax_control = self.axs[1, col]
         ax_control.plot(
-            time_points, control_outputs, alpha=alpha, color=color, linewidth=line_width
+            time_points,
+            control_outputs,
+            alpha=alpha,
+            color=color,
+            linewidth=line_width,
+            label=f"Forced {self.system_name}",
         )
-        ax_control.set_ylabel("Control Output", fontsize=14)
+        ax_control.set_ylabel("Control Output", fontsize=12)
         ax_control.set_title(
-            f"{session.capitalize()}: {self.system_name} Control Output", fontsize=16
+            f"{session.capitalize()}: {self.system_name} Control Output", fontsize=14
         )
+        # Add legend only once
+        if not self.legend_added["control_output"]:
+            ax_control.legend(loc="upper right", fontsize=10)
+            self.legend_added["control_output"] = True
         ax_control.grid(True, which="both", linestyle="--", linewidth=0.5)
 
         # Plot PID parameters in the third row
         ax_pid = self.axs[2, col]
+        # Plot Kp, Ki, Kd with same color but different styles
         ax_pid.plot(
             time_points,
             kp_values,
             alpha=alpha,
-            color="red",
+            color=color,
             linestyle="--",
             linewidth=line_width,
-            label="Kp",
+            label=f"Kp (Epoch {self.epoch_count})",
         )
         ax_pid.plot(
             time_points,
             ki_values,
             alpha=alpha,
-            color="green",
+            color=color,
             linestyle="-.",
             linewidth=line_width,
-            label="Ki",
+            label=f"Ki (Epoch {self.epoch_count})",
         )
         ax_pid.plot(
             time_points,
             kd_values,
             alpha=alpha,
-            color="blue",
+            color=color,
             linestyle=":",
             linewidth=line_width,
-            label="Kd",
+            label=f"Kd (Epoch {self.epoch_count})",
         )
-        ax_pid.set_ylabel("PID Parameters", fontsize=14)
+        ax_pid.set_ylabel("PID Parameters", fontsize=12)
         ax_pid.set_title(
-            f"{session.capitalize()}: {self.system_name} PID Parameters", fontsize=16
+            f"{session.capitalize()}: {self.system_name} PID Parameters", fontsize=14
         )
-        ax_pid.legend(fontsize=10)
+        # Add legend only once, showing line styles
+        if not self.legend_added["pid_parameters"]:
+            # Create custom legend handles
+            from matplotlib.lines import Line2D
+
+            legend_elements = [
+                Line2D([0], [0], color="black", linestyle="--", label="Kp"),
+                Line2D([0], [0], color="black", linestyle="-.", label="Ki"),
+                Line2D([0], [0], color="black", linestyle=":", label="Kd"),
+            ]
+            ax_pid.legend(handles=legend_elements, fontsize=10)
+            self.legend_added["pid_parameters"] = True
         ax_pid.grid(True, which="both", linestyle="--", linewidth=0.5)
 
         # Plot losses in the fourth row (only for 'train' and 'validation')
@@ -153,12 +198,17 @@ class DynamicPlot:
                 alpha=alpha,
                 color=color,
                 linewidth=line_width,
+                label=f"Epoch {self.epoch_count}",
             )
-            ax_loss.set_xlabel("Training Steps", fontsize=14)
-            ax_loss.set_ylabel("Loss", fontsize=14)
+            ax_loss.set_xlabel("Training Steps", fontsize=12)
+            ax_loss.set_ylabel("Loss", fontsize=12)
             ax_loss.set_title(
-                f"{session.capitalize()}: {self.system_name} Loss", fontsize=16
+                f"{session.capitalize()}: {self.system_name} Loss", fontsize=14
             )
+            # Add legend only once
+            if not self.legend_added["loss"]:
+                ax_loss.legend(loc="upper right", fontsize=10)
+                self.legend_added["loss"] = True
             ax_loss.grid(True, which="both", linestyle="--", linewidth=0.5)
         else:
             # Hide the subplot if there are no losses to plot
@@ -168,20 +218,29 @@ class DynamicPlot:
         ax_error = self.axs[4, col]
         if len(errors) > 0:
             ax_error.plot(
-                time_points, errors, alpha=alpha, color=color, linewidth=line_width
+                time_points,
+                errors,
+                alpha=alpha,
+                color=color,
+                linewidth=line_width,
+                label=f"Epoch {self.epoch_count}",
             )
-            ax_error.set_xlabel("Time", fontsize=14)
-            ax_error.set_ylabel("Error", fontsize=14)
+            ax_error.set_xlabel("Time", fontsize=12)
+            ax_error.set_ylabel("Error", fontsize=12)
             ax_error.set_title(
-                f"{session.capitalize()}: {self.system_name} Error", fontsize=16
+                f"{session.capitalize()}: {self.system_name} Error", fontsize=14
             )
+            # Add legend only once
+            if not self.legend_added["error"]:
+                ax_error.legend(loc="upper right", fontsize=10)
+                self.legend_added["error"] = True
             ax_error.grid(True, which="both", linestyle="--", linewidth=0.5)
         else:
             # Hide the subplot if there are no errors to plot
             ax_error.set_visible(False)
 
         # Adjust layout to leave space for the main title
-        plt.tight_layout(rect=(0., 0.03, 1., 0.95))
+        plt.tight_layout(rect=(0.0, 0.03, 1.0, 0.95))
 
         # Redraw the plot
         plt.draw()
