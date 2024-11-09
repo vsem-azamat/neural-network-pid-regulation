@@ -212,4 +212,9 @@ def plot_rbf_training_results(
     axs[1].set_xlabel("Training Steps")
     axs[1].set_ylabel("Loss")
     axs[1].grid(True)
+
+    plt.tight_layout()
+    save_name = f"rbf_{system_name.lower()}"
+    save_path = os.path.join(cnfg.PLOTS_DIR, f"{save_name}.png")
+    plt.savefig(save_path, bbox_inches="tight", dpi=150)
     plt.show()
