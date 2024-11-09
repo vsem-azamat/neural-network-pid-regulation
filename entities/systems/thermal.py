@@ -45,8 +45,8 @@ class Thermal(BaseSystem):
 
     def reset(self) -> None:
         """Reset the system temperature to initial conditions"""
-        self.temperature = torch.tensor(293.15, dtype=torch.float32)
-        self.temp_derivative = torch.tensor(0.0, dtype=torch.float32)
+        self.temperature = torch.tensor(293.15)
+        self.temp_derivative = torch.tensor(0.0)
 
     @property
     def X(self) -> Tensor:

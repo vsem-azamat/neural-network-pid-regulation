@@ -86,7 +86,7 @@ class NonLinearPendulumCart(BaseSystem):
 
     def reset(self) -> None:
         """Reset the system state to initial conditions"""
-        self.x = torch.tensor(0.0, dtype=torch.float32)
-        self.x_dot = torch.tensor(0.0, dtype=torch.float32)
-        self.theta = torch.tensor(0.1, dtype=torch.float32)  # Small initial angle
-        self.theta_dot = torch.tensor(0.0, dtype=torch.float32)
+        self.x = torch.tensor(0.0)
+        self.x_dot = torch.tensor(0.0)
+        self.theta = torch.tensor(0.1)  # Small initial angle
+        self.theta_dot = torch.tensor(0.0)

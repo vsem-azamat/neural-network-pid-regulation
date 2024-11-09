@@ -58,9 +58,9 @@ class SpringDamper(BaseSystem):
 
     def reset(self) -> None:
         """Reset position, velocity, and acceleration to zero."""
-        self.position = torch.tensor(0.0, dtype=torch.float32)
-        self.velocity = torch.tensor(0.0, dtype=torch.float32)
-        self.acceleration = torch.tensor(0.0, dtype=torch.float32)
+        self.position = torch.tensor(0.0)
+        self.velocity = torch.tensor(0.0)
+        self.acceleration = torch.tensor(0.0)
 
     @property
     def X(self) -> Tensor:
