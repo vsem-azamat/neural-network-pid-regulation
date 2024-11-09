@@ -1,11 +1,10 @@
 import torch
-import torch.nn as nn
-import torch.optim as optim
 import numpy as np
 
 from models.sys_rbf import SystemRBFModel
 from entities.systems.trolley import Trolley
 from utils import save_load
+from utils.run import train_rbf_model
 from utils.plot import plot_rbf_training_results
 
 
@@ -37,38 +36,6 @@ def generate_training_data(trolley: Trolley, num_samples: int = 1000):
         y[i] = next_position
 
     return X, y
-
-
-def train_rbf_model(model, X, y, num_epochs=500, batch_size=64, learning_rate=0.001):
-    criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-
-    losses = []
-
-    for epoch in range(num_epochs):
-        epoch_losses = []
-        permutation = torch.randperm(X.size()[0])
-        X_shuffled = X[permutation]
-        y_shuffled = y[permutation]
-        for i in range(0, len(X), batch_size):
-            batch_X = X_shuffled[i : i + batch_size]
-            batch_y = y_shuffled[i : i + batch_size]
-
-            outputs = model(batch_X)
-            loss = criterion(outputs, batch_y)
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            epoch_losses.append(loss.item())
-
-        avg_loss = sum(epoch_losses) / len(epoch_losses)
-        losses.append(avg_loss)
-        if (epoch + 1) % 10 == 0:
-            print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}")
-
-    return losses
 
 
 def compare_predictions(model, trolley: Trolley, num_steps=200):

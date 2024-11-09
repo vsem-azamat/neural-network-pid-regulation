@@ -1,11 +1,10 @@
 import torch
-import torch.nn as nn
-import torch.optim as optim
 import numpy as np
 
 from models.sys_rbf import SystemRBFModel
 from entities.systems.thermal import Thermal
 from utils import save_load
+from utils.run import train_rbf_model
 from utils.plot import plot_rbf_training_results
 
 
@@ -14,9 +13,9 @@ def generate_training_data(thermal_system: Thermal, num_samples: int = 1000):
     y = torch.zeros((num_samples, 1))  # next_temperature
 
     for i in range(num_samples):
-        temperature = torch.rand(1) * 50.0 + 20.0  # [20, 70]
-        temp_derivative = torch.rand(1) * 10.0 - 5.0  # [-5, 5]
-        control_input = torch.rand(1) * 1000.0  # [0, 1000]
+        temperature = torch.rand(1) * 500.0
+        temp_derivative = torch.rand(1) * 100.0 - 50.0  # [-50, 50]
+        control_input = torch.rand(1) * 10000.0  # [0, 1000]
 
         thermal_system.temperature = temperature
         thermal_system.temp_derivative = temp_derivative
@@ -28,45 +27,6 @@ def generate_training_data(thermal_system: Thermal, num_samples: int = 1000):
         y[i] = next_temperature
 
     return X, y
-
-
-def train_rbf_model(
-    model: SystemRBFModel,
-    X: torch.Tensor,
-    y: torch.Tensor,
-    num_epochs: int = 500,
-    batch_size: int = 64,
-    learning_rate: float = 0.001,
-) -> list:
-    criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-
-    losses = []
-
-    for epoch in range(num_epochs):
-        epoch_losses = []
-        permutation = torch.randperm(X.size()[0])
-        X_shuffled = X[permutation]
-        y_shuffled = y[permutation]
-        for i in range(0, len(X), batch_size):
-            batch_X = X_shuffled[i : i + batch_size]
-            batch_y = y_shuffled[i : i + batch_size]
-
-            outputs = model(batch_X)
-            loss = criterion(outputs, batch_y)
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            epoch_losses.append(loss.item())
-
-        avg_loss = sum(epoch_losses) / len(epoch_losses)
-        losses.append(avg_loss)
-        if (epoch + 1) % 10 == 0:
-            print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}")
-
-    return losses
 
 
 def compare_predictions(model, thermal_system: Thermal, num_steps: int = 200):
@@ -123,7 +83,7 @@ if __name__ == "__main__":
         input_std=X_std,
         output_mean=y_mean,
         output_std=y_std,
-        hidden_features=20,
+        hidden_features=30,
     )
 
     losses = train_rbf_model(

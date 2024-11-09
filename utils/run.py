@@ -1,9 +1,11 @@
 import torch
 from typing import Literal, Callable
 from torch.optim.optimizer import Optimizer
+from torch import nn, optim
 
 from entities.pid import PID
 from entities.systems import BaseSystem
+from models.sys_rbf import SystemRBFModel
 from utils.loss import default_loss
 from utils.others import calculate_angle_2p
 from classes.simulation import SimulationConfig, SimulationResults
@@ -143,3 +145,42 @@ def run_simulation(
             print(f"Step: {step}, Loss: {loss.item()}")
 
     return results
+
+
+def train_rbf_model(
+    model: SystemRBFModel,
+    X: torch.Tensor,
+    y: torch.Tensor,
+    num_epochs: int = 500,
+    batch_size: int = 64,
+    learning_rate: float = 0.001,
+) -> list:
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+
+    losses = []
+
+    for epoch in range(num_epochs):
+        epoch_losses = []
+        permutation = torch.randperm(X.size()[0])
+        X_shuffled = X[permutation]
+        y_shuffled = y[permutation]
+        for i in range(0, len(X), batch_size):
+            batch_X = X_shuffled[i : i + batch_size]
+            batch_y = y_shuffled[i : i + batch_size]
+
+            outputs = model(batch_X)
+            loss = criterion(outputs, batch_y)
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            epoch_losses.append(loss.item())
+
+        avg_loss = sum(epoch_losses) / len(epoch_losses)
+        losses.append(avg_loss)
+        if (epoch + 1) % 10 == 0:
+            print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}")
+
+    return losses
