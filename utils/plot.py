@@ -175,3 +175,41 @@ class DynamicPlot:
 
     def show(self) -> None:
         plt.show()
+
+
+def plot_rbf_training_results(
+    control_inputs,
+    Y_rbf,
+    Y_actual,
+    losses: list[float],
+    system_name="<System>",
+) -> None:
+    fig, axs = plt.subplots(1, 2, figsize=(20, 6))
+    axs[0].plot(
+        control_inputs,
+        Y_rbf,
+        label="RBF Model",
+        marker="o",
+        linestyle="-",
+        markersize=3,
+    )
+    axs[0].plot(
+        control_inputs,
+        Y_actual,
+        label="Actual System",
+        marker="x",
+        linestyle="-",
+        markersize=3,
+    )
+    axs[0].set_title(f"Comparison of RBF Model vs Actual {system_name} System")
+    axs[0].set_xlabel("Control Input")
+    axs[0].set_ylabel("Position")
+    axs[0].legend()
+    axs[0].grid(True)
+
+    axs[1].plot(range(len(losses)), losses)
+    axs[1].set_title(f"Training Losses for {system_name} RBF Model")
+    axs[1].set_xlabel("Training Steps")
+    axs[1].set_ylabel("Loss")
+    axs[1].grid(True)
+    plt.show()

@@ -2,11 +2,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-import matplotlib.pyplot as plt
 
 from models.sys_rbf import SystemRBFModel
 from entities.systems.thermal import Thermal
 from utils import save_load
+from utils.plot import plot_rbf_training_results
 
 
 def generate_training_data(thermal_system: Thermal, num_samples: int = 1000):
@@ -69,17 +69,6 @@ def train_rbf_model(
     return losses
 
 
-def plot_training_loss(losses):
-    plt.figure(figsize=(10, 5))
-    plt.plot(losses)
-    plt.title("Training Loss over Epochs")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.yscale("log")
-    plt.grid(True)
-    plt.show()
-
-
 def compare_predictions(model, thermal_system: Thermal, num_steps: int = 200):
     initial_temperature = torch.tensor(25.0)
     initial_temp_derivative = torch.tensor(0.0)
@@ -108,32 +97,6 @@ def compare_predictions(model, thermal_system: Thermal, num_steps: int = 200):
         thermal_system.temperature = torch.tensor(actual_next_temp)
 
     return control_inputs.numpy(), rbf_temperatures, actual_temperatures
-
-
-def plot_comparison(control_inputs, rbf_temperatures, actual_temperatures):
-    plt.figure(figsize=(12, 6))
-    plt.plot(
-        control_inputs,
-        rbf_temperatures,
-        label="RBF Model",
-        marker="o",
-        linestyle="-",
-        markersize=3,
-    )
-    plt.plot(
-        control_inputs,
-        actual_temperatures,
-        label="Actual System",
-        marker="x",
-        linestyle="-",
-        markersize=3,
-    )
-    plt.title("Comparison of RBF Model vs Actual Thermal System")
-    plt.xlabel("Control Input (W)")
-    plt.ylabel("Temperature (°C)")
-    plt.legend()
-    plt.grid(True)
-    plt.show()
 
 
 if __name__ == "__main__":
@@ -170,16 +133,19 @@ if __name__ == "__main__":
     # Save the trained RBF model
     save_load.save_rbf_model(rbf_model, "sys_rbf_thermal.pth")
 
-    # Plot training loss
-    plot_training_loss(losses)
-
     # Compare RBF model predictions with actual thermal system
     control_inputs, rbf_temperatures, actual_temperatures = compare_predictions(
         rbf_model, thermal_system
     )
 
     # Plot comparison
-    plot_comparison(control_inputs, rbf_temperatures, actual_temperatures)
+    plot_rbf_training_results(
+        control_inputs,
+        rbf_temperatures,
+        actual_temperatures,
+        losses,
+        system_name="Thermal",
+    )
 
     # Calculate the mean squared error
     mse = np.mean((np.array(rbf_temperatures) - np.array(actual_temperatures)) ** 2)

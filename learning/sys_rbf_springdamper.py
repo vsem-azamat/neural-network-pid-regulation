@@ -2,11 +2,11 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
-import matplotlib.pyplot as plt
 
 from models.sys_rbf import SystemRBFModel
 from entities.systems.springdamper import SpringDamper
 from utils import save_load
+from utils.plot import plot_rbf_training_results
 
 
 def generate_training_data(msd: SpringDamper, num_samples: int = 1000):
@@ -74,17 +74,6 @@ def train_rbf_model(model, X, y, num_epochs=500, batch_size=64, learning_rate=0.
     return losses
 
 
-def plot_training_loss(losses):
-    plt.figure(figsize=(10, 5))
-    plt.plot(losses)
-    plt.title("Training Loss over Epochs")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.yscale("log")
-    plt.grid(True)
-    plt.show()
-
-
 def compare_predictions(model, msd: SpringDamper, num_steps=200):
     initial_position = torch.tensor(0.0)
     initial_velocity = torch.tensor(0.0)
@@ -115,32 +104,6 @@ def compare_predictions(model, msd: SpringDamper, num_steps=200):
         msd.position = torch.tensor(actual_next_position)
 
     return control_inputs.numpy(), rbf_positions, actual_positions
-
-
-def plot_comparison(control_inputs, rbf_positions, actual_positions):
-    plt.figure(figsize=(12, 6))
-    plt.plot(
-        control_inputs,
-        rbf_positions,
-        label="RBF Model",
-        marker="o",
-        linestyle="-",
-        markersize=3,
-    )
-    plt.plot(
-        control_inputs,
-        actual_positions,
-        label="Actual System",
-        marker="x",
-        linestyle="-",
-        markersize=3,
-    )
-    plt.title("Comparison of RBF Model vs Actual Mass-Spring-Damper System")
-    plt.xlabel("Control Input")
-    plt.ylabel("Position")
-    plt.legend()
-    plt.grid(True)
-    plt.show()
 
 
 if __name__ == "__main__":
@@ -182,16 +145,19 @@ if __name__ == "__main__":
     # Save the trained model (including the normalizers as part of the model)
     save_load.save_rbf_model(rbf_model, "sys_rbf_springdamper.pth")
 
-    # Plot training loss
-    plot_training_loss(losses)
-
     # Compare predictions
     control_inputs, rbf_positions, actual_positions = compare_predictions(
         rbf_model, msd
     )
 
     # Plot comparison
-    plot_comparison(control_inputs, rbf_positions, actual_positions)
+    plot_rbf_training_results(
+        control_inputs,
+        rbf_positions,
+        actual_positions,
+        losses,
+        system_name="SpringDamper",
+    )
 
     # Calculate and print Mean Squared Error
     mse = np.mean((np.array(rbf_positions) - np.array(actual_positions)) ** 2)
