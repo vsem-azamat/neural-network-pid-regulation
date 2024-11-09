@@ -21,6 +21,10 @@ def simulation_step(
     extract_lstm_input: Callable[[SimulationConfig, SimulationResults], torch.Tensor],
     hidden: torch.Tensor | None = None,
 ):
+    assert (
+        simulation_config.dt < system.min_dt
+    ), "Time step is too large for the system."
+
     current_time = step * simulation_config.dt
 
     # >>> RBF <<<
