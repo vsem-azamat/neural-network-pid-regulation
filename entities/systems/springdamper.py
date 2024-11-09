@@ -45,7 +45,12 @@ class SpringDamper(BaseSystem):
         Returns:
             Tensor: Updated position (m)
         """
-        F_total = control_output - self.damping * self.velocity - self.spring * self.position - disturbance
+        F_total = (
+            control_output
+            - self.damping * self.velocity
+            - self.spring * self.position
+            - disturbance
+        )
         self.acceleration = F_total / self.mass
         self.velocity = self.velocity + self.acceleration * self.dt
         self.position = self.position + self.velocity * self.dt

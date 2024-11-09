@@ -16,7 +16,7 @@ def extract_rbf_input(system: SpringDamper, results: SimulationResults) -> torch
         system.X,
         system.dXdT,
         system.d2XdT2,
-        results.control_outputs[-1] if results.control_outputs else torch.tensor(0.0)
+        results.control_outputs[-1] if results.control_outputs else torch.tensor(0.0),
     ]
     rbf_input = torch.tensor(inputs)
     return rbf_input.unsqueeze(0)
@@ -29,23 +29,33 @@ def extract_lstm_input(
     input_array = torch.zeros(4, simulation_config.sequence_length)
 
     # Populate input array with historical data
-    error_history_len = min(simulation_config.sequence_length, len(results.error_history))
+    error_history_len = min(
+        simulation_config.sequence_length, len(results.error_history)
+    )
     kp_values_len = min(simulation_config.sequence_length, len(results.kp_values))
     ki_values_len = min(simulation_config.sequence_length, len(results.ki_values))
     kd_values_len = min(simulation_config.sequence_length, len(results.kd_values))
 
     # Paste last values
     input_array[0, -error_history_len:] = torch.tensor(
-        results.error_history[-error_history_len:] if results.error_history else [0.0] * simulation_config.sequence_length
+        results.error_history[-error_history_len:]
+        if results.error_history
+        else [0.0] * simulation_config.sequence_length
     )
     input_array[1, -kp_values_len:] = torch.tensor(
-        results.kp_values[-kp_values_len:] if results.kp_values else [0.0] * simulation_config.sequence_length
+        results.kp_values[-kp_values_len:]
+        if results.kp_values
+        else [0.0] * simulation_config.sequence_length
     )
     input_array[2, -ki_values_len:] = torch.tensor(
-        results.ki_values[-ki_values_len:] if results.ki_values else [0.0] * simulation_config.sequence_length
+        results.ki_values[-ki_values_len:]
+        if results.ki_values
+        else [0.0] * simulation_config.sequence_length
     )
     input_array[3, -kd_values_len:] = torch.tensor(
-        results.kd_values[-kd_values_len:] if results.kd_values else [0.0] * simulation_config.sequence_length
+        results.kd_values[-kd_values_len:]
+        if results.kd_values
+        else [0.0] * simulation_config.sequence_length
     )
 
     # Prepare LSTM input
@@ -53,16 +63,18 @@ def extract_lstm_input(
     return lstm_input
 
 
-def custom_loss(results: SimulationResults, config: SimulationConfig, step: int) -> torch.Tensor:
+def custom_loss(
+    results: SimulationResults, config: SimulationConfig, step: int
+) -> torch.Tensor:
     left_slice = max(0, step - config.sequence_length)
     right_slice = step
 
     # Slices
-    positions = results.rbf_predictions[left_slice:right_slice:config.sequence_step]
-    setpoints = results.setpoints[left_slice:right_slice:config.sequence_step]
-    kp_values = results.kp_values[left_slice:right_slice:config.sequence_step]
-    ki_values = results.ki_values[left_slice:right_slice:config.sequence_step]
-    kd_values = results.kd_values[left_slice:right_slice:config.sequence_step]
+    positions = results.rbf_predictions[left_slice : right_slice : config.sequence_step]
+    setpoints = results.setpoints[left_slice : right_slice : config.sequence_step]
+    kp_values = results.kp_values[left_slice : right_slice : config.sequence_step]
+    ki_values = results.ki_values[left_slice : right_slice : config.sequence_step]
+    kd_values = results.kd_values[left_slice : right_slice : config.sequence_step]
 
     # Tensors
     positions_tensor = torch.stack(positions)
@@ -79,8 +91,8 @@ def custom_loss(results: SimulationResults, config: SimulationConfig, step: int)
     kd_gain = torch.mean(kd_tensor**2)
 
     loss = (
-        1 * tracking_error +
-        1 * overshoot
+        1 * tracking_error
+        + 1 * overshoot
         # Optionally include regularization terms for PID gains
         # + 0.1 * kp_gain +
         # + 0.1 * ki_gain +
@@ -96,7 +108,12 @@ if __name__ == "__main__":
         train_time=15.0,
         learning_rate=0.01,
     )
-    dt, num_epochs, train_steps, lr = learning_config.dt, learning_config.num_epochs, learning_config.train_steps, learning_config.learning_rate
+    dt, num_epochs, train_steps, lr = (
+        learning_config.dt,
+        learning_config.num_epochs,
+        learning_config.train_steps,
+        learning_config.learning_rate,
+    )
 
     # Initialize the MassSpringDamper system with appropriate parameters
     mass = torch.tensor(1.0)
@@ -105,7 +122,11 @@ if __name__ == "__main__":
     springdamper = SpringDamper(mass, damping, spring, dt)
 
     # Initial PID gains
-    initial_Kp, initial_Ki, initial_Kd = torch.tensor(10.0), torch.tensor(0.1), torch.tensor(1.0)
+    initial_Kp, initial_Ki, initial_Kd = (
+        torch.tensor(10.0),
+        torch.tensor(0.1),
+        torch.tensor(1.0),
+    )
 
     # LSTM model parameters
     input_size, hidden_size, output_size = 4, 20, 3
@@ -124,10 +145,10 @@ if __name__ == "__main__":
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
 
     # Load the RBF model trained on the MassSpringDamper system
-    rbf_model = save_load.load_rbf_model('sys_rbf_springdamper.pth')
+    rbf_model = save_load.load_rbf_model("sys_rbf_springdamper.pth")
 
     print("Training phase:")
-    dynamic_plot = DynamicPlot('MassSpringDamper')
+    dynamic_plot = DynamicPlot("MassSpringDamper")
     for epoch in range(num_epochs):
         print(f"Epoch {epoch + 1}/{num_epochs}")
         springdamper.reset()
@@ -148,7 +169,7 @@ if __name__ == "__main__":
             rbf_model=rbf_model,
             simulation_config=training_config,
             optimizer=optimizer,
-            session='train',
+            session="train",
             extract_rbf_input=extract_rbf_input,
             extract_lstm_input=extract_lstm_input,
             loss_function=custom_loss,
@@ -156,14 +177,14 @@ if __name__ == "__main__":
 
         dynamic_plot.update_plot(
             train_results,
-            f'Train {epoch + 1}/{num_epochs}',
-            'train',
+            f"Train {epoch + 1}/{num_epochs}",
+            "train",
         )
 
         scheduler.step()
 
     # Save the trained LSTM model
-    save_load.save_model(lstm_model, 'pid_lstm_springdamper.pth')
+    save_load.save_model(lstm_model, "pid_lstm_springdamper.pth")
 
     # Validation phase
     num_validation_epochs = 5
@@ -188,14 +209,14 @@ if __name__ == "__main__":
             lstm_model=lstm_model,
             rbf_model=rbf_model,
             simulation_config=validation_config,
-            session='validation',
+            session="validation",
             extract_rbf_input=extract_rbf_input,
             extract_lstm_input=extract_lstm_input,
         )
         dynamic_plot.update_plot(
             validation_results,
-            f'Val {epoch + 1}/{num_validation_epochs}',
-            'validation',
+            f"Val {epoch + 1}/{num_validation_epochs}",
+            "validation",
         )
 
         # >>> STATIC (Non-adaptive PID for comparison)
@@ -205,18 +226,18 @@ if __name__ == "__main__":
             pid=pid,
             rbf_model=rbf_model,
             simulation_config=validation_config,
-            session='static',
+            session="static",
             extract_lstm_input=extract_lstm_input,
             extract_rbf_input=extract_rbf_input,
         )
         dynamic_plot.update_plot(
             static_results,
-            f'Stat {epoch + 1}/{num_validation_epochs}',
-            'static',
+            f"Stat {epoch + 1}/{num_validation_epochs}",
+            "static",
         )
 
     dynamic_plot.show()
     dynamic_plot.save("pid_lstm_springdamper", learning_config)
 
     # Save the trained LSTM model
-    save_load.save_model(lstm_model, 'pid_lstm_springdamper.pth')
+    save_load.save_model(lstm_model, "pid_lstm_springdamper.pth")

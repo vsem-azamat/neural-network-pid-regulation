@@ -1,6 +1,7 @@
 import torch
 import numpy as np
 
+
 def tensor2list(tensor) -> list[float | int]:
     try:
         return [t.item() for t in tensor]

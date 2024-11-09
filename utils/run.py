@@ -19,7 +19,7 @@ def simulation_step(
     step: int,
     extract_rbf_input: Callable[[BaseSystem, SimulationResults], torch.Tensor],
     extract_lstm_input: Callable[[SimulationConfig, SimulationResults], torch.Tensor],
-    hidden: torch.Tensor | None = None
+    hidden: torch.Tensor | None = None,
 ):
     current_time = step * simulation_config.dt
 
@@ -31,17 +31,18 @@ def simulation_step(
     lstm_input = extract_lstm_input(simulation_config, results)
 
     if step > 10 and lstm_model is not None:
-        lstm_pred, hidden = lstm_model(
-            lstm_input, 
-            hidden
-        )
+        lstm_pred, hidden = lstm_model(lstm_input, hidden)
         kp, ki, kd = lstm_pred[0] * simulation_config.pid_gain_factor
         pid.update_gains(kp, ki, kd)
     else:
-        kp, ki, kd = pid.Kp.clone().detach(), pid.Ki.clone().detach(), pid.Kd.clone().detach()
+        kp, ki, kd = (
+            pid.Kp.clone().detach(),
+            pid.Ki.clone().detach(),
+            pid.Kd.clone().detach(),
+        )
 
     # >>> PID <<<
-    error = (simulation_config.setpoints[step] - system.X)
+    error = simulation_config.setpoints[step] - system.X
     control_output = pid.compute(error, simulation_config.dt)
     system.apply_control(control_output)
 
@@ -64,8 +65,8 @@ def simulation_step(
         results.losses.append(torch.tensor(0.0))
     else:
         angle = calculate_angle_2p(
-            (results.time_points[-2], results.positions[-2]), 
-            (results.time_points[-1], results.positions[-1])
+            (results.time_points[-2], results.positions[-2]),
+            (results.time_points[-1], results.positions[-1]),
         )
         results.angle_history.append(angle)
 
@@ -80,18 +81,20 @@ def run_simulation(
     extract_lstm_input: Callable[[SimulationConfig, SimulationResults], torch.Tensor],
     rbf_model: torch.nn.Module,
     lstm_model: torch.nn.Module | None = None,
-    loss_function: Callable[[SimulationResults, SimulationConfig, int], torch.Tensor] = default_loss,
-    session: Literal['train', 'validation', 'static'] = 'train',
+    loss_function: Callable[
+        [SimulationResults, SimulationConfig, int], torch.Tensor
+    ] = default_loss,
+    session: Literal["train", "validation", "static"] = "train",
     optimizer: Optimizer | None = None,
 ):
     # >>> Asserts <<<
-    if session == 'train' and optimizer is None:
+    if session == "train" and optimizer is None:
         raise ValueError("Optimizer must be provided for training session.")
 
-    if session in ['validation', 'static'] and optimizer is not None:
+    if session in ["validation", "static"] and optimizer is not None:
         print("Optimizer is not needed for validation/static session.")
 
-    if session == 'static' and lstm_model is not None:
+    if session == "static" and lstm_model is not None:
         raise ValueError("LSTM model is not needed for static session.")
 
     torch.autograd.set_detect_anomaly(True)
@@ -124,14 +127,15 @@ def run_simulation(
         results.losses.append(loss)
 
         # >>> Calculate: Loss and Update Optimizer <<<
-        if session == 'train' and \
-            step % simulation_config.sequence_length == 0 and \
-            step >= simulation_config.sequence_length:
-                        
+        if (
+            session == "train"
+            and step % simulation_config.sequence_length == 0
+            and step >= simulation_config.sequence_length
+        ):
+
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
             print(f"Step: {step}, Loss: {loss.item()}")
 
     return results
-
