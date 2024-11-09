@@ -17,7 +17,28 @@ class BaseSystem(ABC):
         Returns:
                 None
         """
-        pass
+        raise NotImplementedError("apply_control not implemented")
+
+    @abstractmethod
+    def reset(self) -> None:
+        """
+        Reset the object to its initial state
+
+        Returns:
+                None
+        """
+        raise NotImplementedError("reset not implemented")
+
+    @property
+    @abstractmethod
+    def min_dt(self, oversampling_factor: float = 10.0) -> Tensor:
+        """
+        Return the minimum time step
+
+        Returns:
+                Tensor: minimum time step
+        """
+        raise NotImplementedError("min_dt not implemented")
 
     @property
     @abstractmethod
@@ -28,7 +49,7 @@ class BaseSystem(ABC):
         Returns:
                 float: position of the object
         """
-        pass
+        raise NotImplementedError("X not implemented")
 
     @property
     @abstractmethod
@@ -39,7 +60,7 @@ class BaseSystem(ABC):
         Returns:
                 float: velocity of the object
         """
-        pass
+        raise NotImplementedError("dXdT not implemented")
 
     @property
     @abstractmethod
@@ -50,4 +71,4 @@ class BaseSystem(ABC):
         Returns:
                 float: acceleration of the object
         """
-        pass
+        raise NotImplementedError("d2XdT2 not implemented")

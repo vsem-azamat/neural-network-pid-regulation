@@ -127,7 +127,7 @@ if __name__ == "__main__":
         print(f"Epoch {epoch + 1}/{num_epochs}")
         thermal.reset()
 
-        setpoints = [torch.rand(1) * 200] * train_steps  # [0, 200] degC
+        setpoints = [torch.rand(1) * 293.15 + 300] * train_steps # [300, 593.15] K
         training_config = SimulationConfig(
             setpoints=setpoints,
             dt=dt,
@@ -165,7 +165,7 @@ if __name__ == "__main__":
     print("Validation phase:")
     for epoch in range(num_validation_epochs):
         print(f"Validation Epoch {epoch + 1}/{num_validation_epochs}")
-        setpoints_val = [torch.rand(1) * 200] * validation_steps  # [0, 200] degC
+        setpoints_val = [torch.rand(1) * 293.15 + 300] * validation_steps  # [300, 593.15] K
 
         # >>> VALIDATION
         thermal.reset()
