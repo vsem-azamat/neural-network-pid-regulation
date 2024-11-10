@@ -265,6 +265,9 @@ def plot_rbf_training_results(
     losses: list[float],
     system_name="<System>",
     state_label="Position",
+    num_epochs: int | None = None,
+    learning_rate: float | None = None,
+    optimizer_name: str | None = None,
 ) -> None:
     fig, axs = plt.subplots(1, 2, figsize=(20, 6))
     axs[0].plot(
@@ -296,7 +299,7 @@ def plot_rbf_training_results(
     axs[1].grid(True)
 
     plt.tight_layout()
-    save_name = f"rbf_{system_name.lower()}"
+    save_name = f"rbf_{system_name.lower()}_ep_{num_epochs}_lr_{learning_rate}_opt_{optimizer_name}"
     save_path = os.path.join(cnfg.PLOTS_DIR, f"{save_name}.png")
     plt.savefig(save_path, bbox_inches="tight", dpi=150)
     plt.show()

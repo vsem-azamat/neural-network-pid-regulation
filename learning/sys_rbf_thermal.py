@@ -86,8 +86,22 @@ if __name__ == "__main__":
         hidden_features=30,
     )
 
+    # Trainin settings
+    lr = 0.001
+    optimizer_name = "adam"
+    gradient_clip_value = None
+    num_epochs = 1000
+    batch_size = 32
+
     losses = train_rbf_model(
-        rbf_model, X, y, num_epochs=1000, batch_size=32, learning_rate=0.001
+        rbf_model, 
+        X, 
+        y,
+        num_epochs=num_epochs,
+        batch_size=batch_size,
+        learning_rate=lr,
+        optimizer=optimizer_name,
+        gradient_clip_value=gradient_clip_value, 
     )
 
     # Save the trained RBF model

@@ -154,9 +154,16 @@ def train_rbf_model(
     num_epochs: int = 500,
     batch_size: int = 64,
     learning_rate: float = 0.001,
+    optimizer: Literal["adam", "sgd"] = "adam",
+    gradient_clip_value: float | None = None,
 ) -> list:
     criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    if optimizer == "adam":
+        optimizer_ = optim.Adam(model.parameters(), lr=learning_rate)
+    elif optimizer == "sgd":
+        optimizer_ = optim.SGD(model.parameters(), lr=learning_rate)
+    else:
+        raise ValueError("Invalid optimizer type.")
 
     losses = []
 
@@ -172,9 +179,13 @@ def train_rbf_model(
             outputs = model(batch_X)
             loss = criterion(outputs, batch_y)
 
-            optimizer.zero_grad()
+            optimizer_.zero_grad()
             loss.backward()
-            optimizer.step()
+
+            if gradient_clip_value is not None:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_value)
+
+            optimizer_.step()
 
             epoch_losses.append(loss.item())
 
