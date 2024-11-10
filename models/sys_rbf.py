@@ -55,10 +55,10 @@ class SystemRBFModel(nn.Module):
         output_size=1,
     ) -> None:
         super(SystemRBFModel, self).__init__()
-        self.input_mean = nn.Parameter(input_mean, requires_grad=False)
-        self.input_std = nn.Parameter(input_std, requires_grad=False)
-        self.output_mean = nn.Parameter(output_mean, requires_grad=False)
-        self.output_std = nn.Parameter(output_std, requires_grad=False)
+        self.input_mean = nn.Parameter(input_mean)
+        self.input_std = nn.Parameter(input_std)
+        self.output_mean = nn.Parameter(output_mean)
+        self.output_std = nn.Parameter(output_std)
 
         self.input_norm = InputNormalizationLayer(self.input_mean, self.input_std)
         self.rbf = RBFLayer(in_features=input_size, out_features=hidden_features)
