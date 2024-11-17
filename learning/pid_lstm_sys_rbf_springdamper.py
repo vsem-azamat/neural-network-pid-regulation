@@ -26,20 +26,23 @@ def extract_lstm_input(
     simulation_config: SimulationConfig,
     results: SimulationResults,
 ) -> torch.Tensor:
-    input_array = torch.zeros(4, simulation_config.sequence_length)
+    input_array = torch.zeros(5, simulation_config.sequence_length)
 
     # Populate input array with historical data
-    error_history_len = min(
-        simulation_config.sequence_length, len(results.error_history)
+    position_history_len = min(
+        simulation_config.sequence_length, len(results.positions)
+    )
+    setpoint_history_len = min(
+        simulation_config.sequence_length, len(results.setpoints)
     )
     kp_values_len = min(simulation_config.sequence_length, len(results.kp_values))
     ki_values_len = min(simulation_config.sequence_length, len(results.ki_values))
     kd_values_len = min(simulation_config.sequence_length, len(results.kd_values))
 
     # Paste last values
-    input_array[0, -error_history_len:] = torch.tensor(
-        results.error_history[-error_history_len:]
-        if results.error_history
+    input_array[0, -position_history_len:] = torch.tensor(
+        results.positions[-position_history_len:]
+        if results.positions
         else [0.0] * simulation_config.sequence_length
     )
     input_array[1, -kp_values_len:] = torch.tensor(
@@ -129,7 +132,7 @@ if __name__ == "__main__":
     )
 
     # LSTM model parameters
-    input_size, hidden_size, output_size = 4, 20, 3
+    input_size, hidden_size, output_size = 5, 20, 3
 
     # Initialize PID controller
     pid = PID(initial_Kp, initial_Ki, initial_Kd)
