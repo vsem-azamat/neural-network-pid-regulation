@@ -137,6 +137,7 @@ if __name__ == "__main__":
         actual_positions,
         losses,
         system_name="Trolley",
+        state_label="Position (m)",
         num_epochs=num_epochs,
         learning_rate=lr,
         optimizer_name=optimizer_name,

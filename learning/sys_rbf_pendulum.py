@@ -1,35 +1,38 @@
 import torch
-import torch.nn as nn
-import torch.optim as optim
 import numpy as np
-import matplotlib.pyplot as plt
 
-from utils.normalizer import Normalizer
 from models.sys_rbf import SystemRBFModel
-from entities.systems.pendulum import NonLinearPendulumCart
+from entities.systems import NonLinearPendulumCart
+from utils import save_load
+from utils.run import train_rbf_model
+from utils.plot import plot_rbf_training_results
 
 
-def generate_training_data(pendulum_cart, num_samples=2000):
+def generate_training_data(
+    pendulum_cart: NonLinearPendulumCart, num_samples: int = 2000
+):
     X = torch.zeros((num_samples, 5))  # [x, x_dot, theta, theta_dot, control_input]
     y = torch.zeros(
         (num_samples, 4)
     )  # [next_x, next_x_dot, next_theta, next_theta_dot]
 
     for i in range(num_samples):
-        x = torch.rand(1) * 4 - 2  # Random position between -2 and 2
-        x_dot = torch.rand(1) * 4 - 2  # Random velocity between -2 and 2
-        theta = torch.rand(1) * np.pi - np.pi / 2  # Random angle between -pi/2 and pi/2
-        theta_dot = torch.rand(1) * 4 - 2  # Random angular velocity between -2 and 2
-        control_input = (
-            torch.rand(1) * 20 - 10
-        )  # Random control input between -10 and 10
+        x = torch.rand(1) * 4 - 2  # [-2, 2] meters
+        x_dot = torch.rand(1) * 20 - 10  # [-10, 10] m/s
+        theta = torch.rand(1) * 2 * torch.pi - torch.pi  # [-pi, pi] radians
+        theta_dot = torch.rand(1) * 20 - 10  # [-10, 10] rad/s
+        control_input = torch.rand(1) * 200 - 100  # [-10, 10] N
 
+        # Set the system's state
         pendulum_cart.x = x
         pendulum_cart.x_dot = x_dot
         pendulum_cart.theta = theta
         pendulum_cart.theta_dot = theta_dot
+
+        # Apply control to get next state
         next_state = pendulum_cart.apply_control(control_input)
 
+        # Store input and output
         X[i] = torch.tensor(
             [
                 x.item(),
@@ -44,137 +47,55 @@ def generate_training_data(pendulum_cart, num_samples=2000):
     return X, y
 
 
-def train_rbf_model(
-    model, pendulum_cart, num_epochs=500, batch_size=32, learning_rate=0.001
-):
-    criterion = nn.MSELoss()
-    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
-
-    X, y = generate_training_data(pendulum_cart)
-
-    # Normalize the data
-    X_normalizer = Normalizer(X)
-    y_normalizer = Normalizer(y)
-
-    X_normalized = X_normalizer.normalize(X)
-    y_normalized = y_normalizer.normalize(y)
-
-    losses = []
-
-    for epoch in range(num_epochs):
-        epoch_losses = []
-        for i in range(0, len(X_normalized), batch_size):
-            batch_X = X_normalized[i : i + batch_size]
-            batch_y = y_normalized[i : i + batch_size]
-
-            outputs = model(batch_X)
-            loss = criterion(outputs, batch_y)
-
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-
-            epoch_losses.append(loss.item())
-
-        avg_loss = sum(epoch_losses) / len(epoch_losses)
-        losses.append(avg_loss)
-        if (epoch + 1) % 10 == 0:
-            print(f"Epoch [{epoch+1}/{num_epochs}], Loss: {avg_loss:.4f}")
-
-    return losses, X_normalizer, y_normalizer
-
-
-def plot_training_loss(losses):
-    plt.figure(figsize=(10, 5))
-    plt.plot(losses)
-    plt.title("Training Loss over Epochs")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.yscale("log")
-    plt.grid(True)
-    plt.show()
-
-
-def compare_predictions(
-    model, pendulum_cart, X_normalizer, y_normalizer, num_steps=200
-):
-    initial_state = torch.tensor(
-        [0.5, 0.0, 0.1, 0.0]
-    )  # Initial state: x, x_dot, theta, theta_dot
-    control_inputs = torch.linspace(-5, 5, num_steps)
+def compare_predictions(model, pendulum_cart: NonLinearPendulumCart, num_steps=200):
+    # Initial conditions
+    initial_x = torch.tensor(0.0)
+    initial_x_dot = torch.tensor(0.0)
+    initial_theta = torch.tensor(0.1)  # Small angle
+    initial_theta_dot = torch.tensor(0.0)
+    control_inputs = torch.zeros(num_steps)  # Zero control force
 
     rbf_states = []
     actual_states = []
 
-    (
-        pendulum_cart.x,
-        pendulum_cart.x_dot,
-        pendulum_cart.theta,
-        pendulum_cart.theta_dot,
-    ) = initial_state
+    # Set initial state
+    pendulum_cart.x = initial_x
+    pendulum_cart.x_dot = initial_x_dot
+    pendulum_cart.theta = initial_theta
+    pendulum_cart.theta_dot = initial_theta_dot
 
     for control in control_inputs:
         # RBF model prediction
         with torch.no_grad():
-            rbf_input = torch.cat([pendulum_cart.get_state(), control.unsqueeze(0)])
-            rbf_input_normalized = X_normalizer.normalize(rbf_input.unsqueeze(0))
-            rbf_next_state_normalized = model(rbf_input_normalized)
-            rbf_next_state = y_normalizer.denormalize(
-                rbf_next_state_normalized
-            ).squeeze(0)
+            rbf_input = torch.tensor(
+                [
+                    [
+                        pendulum_cart.x.item(),
+                        pendulum_cart.x_dot.item(),
+                        pendulum_cart.theta.item(),
+                        pendulum_cart.theta_dot.item(),
+                        control.item(),
+                    ]
+                ]
+            )
+            rbf_next_state = model(rbf_input).numpy()[0]
             rbf_states.append(rbf_next_state)
 
-        # Actual pendulum cart system
+        # Actual system
         actual_next_state = pendulum_cart.apply_control(control)
-        actual_states.append(actual_next_state)
+        actual_states.append(actual_next_state.numpy())
 
-        # Update pendulum cart state for next iteration
-        (
-            pendulum_cart.x,
-            pendulum_cart.x_dot,
-            pendulum_cart.theta,
-            pendulum_cart.theta_dot,
-        ) = actual_next_state
+        # Update pendulum_cart state for next iteration
+        pendulum_cart.x = actual_next_state[0]
+        pendulum_cart.x_dot = actual_next_state[1]
+        pendulum_cart.theta = actual_next_state[2]
+        pendulum_cart.theta_dot = actual_next_state[3]
 
-    return control_inputs.numpy(), torch.stack(rbf_states), torch.stack(actual_states)
-
-
-def plot_comparison(control_inputs, rbf_states, actual_states):
-    fig, axs = plt.subplots(2, 2, figsize=(15, 10))
-    state_labels = [
-        "Cart Position",
-        "Cart Velocity",
-        "Pendulum Angle",
-        "Pendulum Angular Velocity",
-    ]
-
-    for i in range(4):
-        row = i // 2
-        col = i % 2
-        axs[row, col].plot(
-            control_inputs,
-            rbf_states[:, i],
-            label="RBF Model",
-            marker="o",
-            linestyle="-",
-            markersize=3,
-        )
-        axs[row, col].plot(
-            control_inputs,
-            actual_states[:, i],
-            label="Actual System",
-            marker="x",
-            linestyle="-",
-            markersize=3,
-        )
-        axs[row, col].set_title(f"{state_labels[i]}")
-        axs[row, col].set_xlabel("Control Input")
-        axs[row, col].set_ylabel("State Value")
-        axs[row, col].legend()
-        axs[row, col].grid(True)
-
-    plt.tight_layout()
-    plt.show()
+    return (
+        np.array(control_inputs),
+        np.array(rbf_states),
+        np.array(actual_states),
+    )
 
 
 if __name__ == "__main__":
@@ -182,43 +103,69 @@ if __name__ == "__main__":
     pendulum_cart = NonLinearPendulumCart(
         cart_mass=torch.tensor(1.0),
         pendulum_mass=torch.tensor(0.1),
-        pendulum_length=torch.tensor(1.0),
+        pendulum_length=torch.tensor(0.5),
         friction=torch.tensor(0.1),
         gravity=torch.tensor(9.81),
         dt=torch.tensor(0.01),
     )
 
+    # Generate training data
+    X, y = generate_training_data(pendulum_cart)
+
+    # Compute mean and std for normalization
+    X_mean = X.mean(dim=0)
+    X_std = X.std(dim=0, unbiased=False)
+    y_mean = y.mean(dim=0)
+    y_std = y.std(dim=0, unbiased=False)
+
     # Initialize and train the RBF model
-    rbf_model = SystemRBFModel(hidden_features=50, input_size=5, output_size=4)
-    losses, X_normalizer, y_normalizer = train_rbf_model(
-        rbf_model, pendulum_cart, num_epochs=500, learning_rate=0.001
+    rbf_model = SystemRBFModel(
+        input_mean=X_mean,
+        input_std=X_std,
+        output_mean=y_mean,
+        output_std=y_std,
+        input_size=5,  # Number of input features
+        output_size=4,  # Number of output features
+        hidden_features=50,
     )
 
-    # Save the trained model and normalizers
-    from utils.save_load import save_model, save_pickle
+    # Training settings
+    lr = 0.001
+    optimizer_name = "adam"
+    gradient_clip_value = None
+    num_epochs = 600
+    batch_size = 32
 
-    save_model(rbf_model, "sys_rbf_pendulum.pth")
-    save_pickle((X_normalizer, y_normalizer), "sys_rbf_pendulum_normalizers.pkl")
+    losses = train_rbf_model(
+        rbf_model,
+        X,
+        y,
+        num_epochs=num_epochs,
+        batch_size=batch_size,
+        learning_rate=lr,
+    )
 
-    # Plot training loss
-    plot_training_loss(losses)
+    # Save the trained model (including the normalizers as part of the model)
+    save_load.save_rbf_model(rbf_model, "sys_rbf_pendulum_cart.pth")
 
     # Compare predictions
     control_inputs, rbf_states, actual_states = compare_predictions(
-        rbf_model, pendulum_cart, X_normalizer, y_normalizer
+        rbf_model, pendulum_cart
     )
 
     # Plot comparison
-    plot_comparison(control_inputs, rbf_states, actual_states)
+    plot_rbf_training_results(
+        control_inputs,
+        rbf_states[:, 2],  # Pendulum angle from RBF model
+        actual_states[:, 2],  # Pendulum angle from actual system
+        losses,
+        system_name="NonLinearPendulumCart",
+        state_label="Pendulum Angle (rad)",
+        num_epochs=num_epochs,
+        learning_rate=lr,
+        optimizer_name=optimizer_name,
+    )
 
-    # Calculate and print Mean Squared Error for each state variable
-    mse = torch.mean((rbf_states - actual_states) ** 2, dim=0)
-    for i, state_label in enumerate(
-        [
-            "Cart Position",
-            "Cart Velocity",
-            "Pendulum Angle",
-            "Pendulum Angular Velocity",
-        ]
-    ):
-        print(f"Mean Squared Error for {state_label}: {mse[i].item():.6f}")
+    # Calculate and print Mean Squared Error
+    mse = np.mean((rbf_states - actual_states) ** 2)
+    print(f"Mean Squared Error between RBF model and actual system: {mse:.6f}")

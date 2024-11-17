@@ -119,6 +119,10 @@ if __name__ == "__main__":
         actual_temperatures,
         losses,
         system_name="Thermal",
+        state_label="Temperature (C)",
+        num_epochs=num_epochs,
+        learning_rate=lr,
+        optimizer_name=optimizer_name,
     )
 
     # Calculate the mean squared error
