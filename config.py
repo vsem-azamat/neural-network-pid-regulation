@@ -11,7 +11,10 @@ class Config:
     os.makedirs(PUBLIC_DIR, exist_ok=True)
 
     PLOTS_DIR: str = "plots"
-    os.makedirs(PLOTS_DIR, exist_ok=True)
+    LEARNING_PLOTS: str = os.path.join(PLOTS_DIR, "learning")
+    os.makedirs(LEARNING_PLOTS, exist_ok=True)
+    SYSTEMS_PLOTS: str = os.path.join(PLOTS_DIR, "systems")
+    os.makedirs(SYSTEMS_PLOTS, exist_ok=True)
 
 
 cnfg = Config()
