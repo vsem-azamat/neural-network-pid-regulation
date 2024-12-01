@@ -1,8 +1,7 @@
 import torch
 
 from entities.systems import Thermal
-from .utils import simulate_system_response, plot_responses
-
+from .utils import simulate_system_response, plot_responses, plot_combined_phase_diagram
 
 if __name__ == "__main__":
     # Initialize the Thermal system with specific parameters
@@ -22,5 +21,13 @@ if __name__ == "__main__":
         [f'Vstupní výkon: {F.item()} W'],
         f'Odezva tepelného systému na jednotkový skok: {F.item()} W',
         'Teplota (K)',
-        'thermal_response.pdf'
+        'response_thermal.pdf'
+    )
+
+    # Plot combined phase diagram
+    plot_combined_phase_diagram(
+        [(time, temperatures)],
+        [f'Vstupní výkon: {F.item()} W'],
+        'Fázový diagram tepelného systému',
+        'phase_thermal.pdf'
     )

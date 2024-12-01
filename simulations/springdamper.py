@@ -1,8 +1,7 @@
 import torch
 
 from entities.systems import SpringDamper
-from .utils import simulate_system_response, plot_responses
-
+from .utils import simulate_system_response, plot_responses, plot_combined_phase_diagram
 
 if __name__ == "__main__":
     # Simulation parameters
@@ -37,5 +36,13 @@ if __name__ == "__main__":
         ['Přetlumená odezva', 'Podtlumená odezva'],
         'Odezvy pružinového tlumiče na jednotkový skok',
         'Pozice (m)',
-        'springdamper_response.pdf'
+        'response_springdamper.pdf'
+    )
+
+    # Plot combined phase diagram
+    plot_combined_phase_diagram(
+        [(time_overdamped, positions_overdamped), (time_underdamped, positions_underdamped)],
+        ['Přetlumená odezva', 'Podtlumená odezva'],
+        'Fázový diagram pružinového tlumiče',
+        'phase_springdamper_combined.pdf'
     )

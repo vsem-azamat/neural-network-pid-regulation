@@ -1,8 +1,7 @@
 import torch
 
 from entities.systems import Trolley
-from .utils import simulate_system_response, plot_responses
-
+from .utils import simulate_system_response, plot_responses, plot_combined_phase_diagram
 
 if __name__ == "__main__":
     # Simulation parameters
@@ -37,5 +36,13 @@ if __name__ == "__main__":
         ['Stabilní odezva', 'Oscilační odezva'],
         'Odezvy vozíku na jednotkový skok',
         'Pozice (m)',
-        'trolley_response.pdf'
+        'response_trolley.pdf'
+    )
+
+    # Plot combined phase diagram
+    plot_combined_phase_diagram(
+        [(time_stable, positions_stable), (time_oscillatory, positions_oscillatory)],
+        ['Stabilní odezva', 'Oscilační odezva'],
+        'Fázový diagram vozíku',
+        'phase_trolley.pdf'
     )

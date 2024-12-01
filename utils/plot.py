@@ -300,6 +300,6 @@ def plot_rbf_training_results(
 
     plt.tight_layout()
     save_name = f"rbf_{system_name.lower()}_ep_{num_epochs}_lr_{learning_rate}_opt_{optimizer_name}"
-    save_path = os.path.join(cnfg.PLOTS_DIR, f"{save_name}.png")
+    save_path = os.path.join(cnfg.LEARNING_PLOTS, f"{save_name}.png")
     plt.savefig(save_path, bbox_inches="tight", dpi=150)
     plt.show()

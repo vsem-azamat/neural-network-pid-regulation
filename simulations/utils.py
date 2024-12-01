@@ -53,3 +53,30 @@ def plot_responses(time_responses, labels, title, ylabel, filename):
     plot_path = os.path.join(cnfg.SYSTEMS_PLOTS, filename)
     plt.savefig(plot_path)
     plt.show()
+
+
+def plot_combined_phase_diagram(data, labels, title, filename):
+    """
+    Vykreslete kombinované fázové diagramy pro různé systémy.
+
+    Argumenty:
+        data (list): Seznam dvojic obsahujících časové a odezvové pole.
+        labels (list): Seznam popisků pro odezvy.
+        title (str): Název grafu.
+        filename (str): Název souboru pro uložení grafu.
+    """
+    plt.figure()
+    for (time, responses), label in zip(data, labels):
+        time = torch.tensor(time)  # Převést na tensor
+        responses = torch.tensor(responses)  # Převést na tensor
+        changes = torch.diff(responses) / torch.diff(time)
+        plt.plot(responses[:-1].numpy(), changes.numpy(), label=label)
+    plt.xlabel('Pozice (m)' if 'Pozice' in title else 'Teplota (K)', fontsize=12)
+    plt.ylabel('Rychlost (m/s)' if 'Pozice' in title else 'Změna teploty (K/s)', fontsize=12)
+    plt.title(title, fontsize=14, fontweight='bold')
+    plt.legend(fontsize=10)
+    plt.grid(True)
+    plt.tight_layout()
+    plot_path = os.path.join(cnfg.SYSTEMS_PLOTS, filename)
+    plt.savefig(plot_path, dpi=300)
+    plt.show()
