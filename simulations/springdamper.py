@@ -44,5 +44,5 @@ if __name__ == "__main__":
         [(time_overdamped, positions_overdamped), (time_underdamped, positions_underdamped)],
         ['Přetlumená odezva', 'Podtlumená odezva'],
         'Fázový diagram pružinového tlumiče',
-        'phase_springdamper_combined.pdf'
+        'phase_springdamper.pdf'
     )
