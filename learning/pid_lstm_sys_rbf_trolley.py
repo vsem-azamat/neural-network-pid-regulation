@@ -1,4 +1,3 @@
-from turtle import position
 import torch
 from torch import optim
 
@@ -9,18 +8,8 @@ from models.pid_lstm import LSTMAdaptivePID
 from utils import save_load
 from utils.plot import DynamicPlot
 from utils.run import run_simulation
+from learning.utils import extract_rbf_input
 from classes.simulation import SimulationConfig, SimulationResults, LearningConfig
-
-
-def extract_rbf_input(system: Trolley, results: SimulationResults) -> torch.Tensor:
-    inputs = [
-        system.X,
-        system.dXdT,
-        system.d2XdT2,
-        results.control_outputs[-1] if results.control_outputs else 0.0,
-    ]
-    rbf_input = torch.tensor(inputs)
-    return rbf_input.unsqueeze(0)
 
 
 def extract_lstm_input(
@@ -166,7 +155,7 @@ if __name__ == "__main__":
             simulation_config=trainining_config,
             optimizer=optimizer,
             session="train",
-            extract_rbf_input=extract_rbf_input,
+            extract_rbf_input=extract_rbf_input.trolley,
             extract_lstm_input=extract_lstm_input,
             loss_function=custom_loss,
         )

@@ -8,18 +8,8 @@ from models.pid_lstm import LSTMAdaptivePID
 from utils import save_load
 from utils.plot import DynamicPlot
 from utils.run import run_simulation
+from learning.utils import extract_rbf_input
 from classes.simulation import SimulationConfig, SimulationResults, LearningConfig
-
-
-def extract_rbf_input(system: SpringDamper, results: SimulationResults) -> torch.Tensor:
-    inputs = [
-        system.X,
-        system.dXdT,
-        system.d2XdT2,
-        results.control_outputs[-1] if results.control_outputs else torch.tensor(0.0),
-    ]
-    rbf_input = torch.tensor(inputs)
-    return rbf_input.unsqueeze(0)
 
 
 def extract_lstm_input(
@@ -173,7 +163,7 @@ if __name__ == "__main__":
             simulation_config=training_config,
             optimizer=optimizer,
             session="train",
-            extract_rbf_input=extract_rbf_input,
+            extract_rbf_input=extract_rbf_input.springdamper,
             extract_lstm_input=extract_lstm_input,
             loss_function=custom_loss,
         )
@@ -213,7 +203,7 @@ if __name__ == "__main__":
             rbf_model=rbf_model,
             simulation_config=validation_config,
             session="validation",
-            extract_rbf_input=extract_rbf_input,
+            extract_rbf_input=springdamper,
             extract_lstm_input=extract_lstm_input,
         )
         dynamic_plot.update_plot(
@@ -231,7 +221,7 @@ if __name__ == "__main__":
             simulation_config=validation_config,
             session="static",
             extract_lstm_input=extract_lstm_input,
-            extract_rbf_input=extract_rbf_input,
+            extract_rbf_input=springdamper,
         )
         dynamic_plot.update_plot(
             static_results,

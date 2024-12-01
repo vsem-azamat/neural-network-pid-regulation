@@ -8,18 +8,8 @@ from models.pid_lstm import LSTMAdaptivePID
 from utils import save_load
 from utils.plot import DynamicPlot
 from utils.run import run_simulation
+from learning.utils import extract_rbf_input
 from classes.simulation import SimulationConfig, SimulationResults, LearningConfig
-
-
-def extract_rbf_input(system: Thermal, results: SimulationResults) -> torch.Tensor:
-    rbf_input = torch.tensor(
-        [
-            system.X,
-            system.dXdT,
-            results.control_outputs[-1] if results.control_outputs else 0.0,
-        ]
-    )
-    return rbf_input.unsqueeze(0)
 
 
 def extract_lstm_input(
@@ -150,7 +140,7 @@ if __name__ == "__main__":
             simulation_config=training_config,
             optimizer=optimizer,
             session="train",
-            extract_rbf_input=extract_rbf_input,
+            extract_rbf_input=extract_rbf_input.thermal,
             extract_lstm_input=extract_lstm_input,
             loss_function=custom_loss,
         )
