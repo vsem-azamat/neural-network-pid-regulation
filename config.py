@@ -15,6 +15,8 @@ class Config:
     os.makedirs(LEARNING_PLOTS, exist_ok=True)
     SYSTEMS_PLOTS: str = os.path.join(PLOTS_DIR, "systems")
     os.makedirs(SYSTEMS_PLOTS, exist_ok=True)
+    METRICS_PLOTS: str = os.path.join(PLOTS_DIR, "metrics")
+    os.makedirs(METRICS_PLOTS, exist_ok=True)
 
 
 cnfg = Config()
