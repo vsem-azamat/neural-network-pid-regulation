@@ -36,6 +36,10 @@ class SimulationConfig(Generic[T]):
     sequence_step: int = 5
     pid_gain_factor: int = 100
 
+    @property
+    def num_steps(self) -> int:
+        return len(self.setpoints)
+
 
 @dataclass
 class SimulationResults(Generic[T]):
