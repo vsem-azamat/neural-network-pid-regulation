@@ -22,7 +22,7 @@ def simulate_system_response(system, num_steps: int, F: torch.Tensor):
     time = np.linspace(0, num_steps * system.dt.item(), num_steps)
     for _ in range(num_steps):
         response = system.apply_control(F)
-        responses.append(response.item())
+        responses.append(response.clone().detach())
 
     return time, responses
 
