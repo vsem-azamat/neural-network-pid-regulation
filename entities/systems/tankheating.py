@@ -13,12 +13,11 @@ class TankHeating(BaseSystem):
         self.tau: Tensor = torch.tensor(4.0)
         self.Q: Tensor = torch.tensor(2.0)
 
-    # TODO: fix the equation of the model
-    def update(
+    def apply_control(
         self, control_output: Tensor, distrubance: Tensor = torch.tensor(0.0)
-    ) -> None:
+    ) -> Tensor:
         """
-        Update the position and velocity of the trolley
+        Update the temperature of the tank based on the control output
 
         Equation of model:
                 dTdt = 1/(1+epsilon) * [1/tau * (Tf - T) + Q * (Tq - T)]
@@ -38,6 +37,42 @@ class TankHeating(BaseSystem):
             * (1 / self.tau * (self.Tf - self.T) + self.Q * (Tq - self.T))
         )
         self.T += dTdt * self.dt
-
-    def get_position(self) -> Tensor:
         return self.T
+
+    def reset(self) -> None:
+        """Reset the system state to initial conditions."""
+        self.T = torch.tensor(300.0)
+
+    @property
+    def X(self) -> Tensor:
+        """Return the current temperature."""
+        return self.T
+
+    @property
+    def dXdT(self) -> Tensor:
+        """Return the rate of change of temperature."""
+        Tq = self.T  # Assuming Tq is the target temperature
+        dTdt = (
+            1
+            / (1 + self.epsilon)
+            * (1 / self.tau * (self.Tf - self.T) + self.Q * (Tq - self.T))
+        )
+        return dTdt
+
+    @property
+    def d2XdT2(self) -> Tensor:
+        """Return the second derivative of temperature (not applicable for this system)."""
+        return torch.tensor(0.0)
+
+    @property
+    def min_dt(self, oversampling_factor: float = 10.0) -> Tensor:
+        """
+        Return a fixed minimum dt for the tank heating system.
+
+        Args:
+            oversampling_factor (float): Factor by which to oversample the Nyquist rate (default is 10)
+
+        Returns:
+            Tensor: Minimum dt value
+        """
+        return self.dt
