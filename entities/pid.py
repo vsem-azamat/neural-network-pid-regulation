@@ -145,3 +145,11 @@ class PID:
         assert max_limit > min_limit, "Max limit must be greater than min limit"
         self.saturation_max = max_limit
         self.saturation_min = min_limit
+
+    def reset(self) -> None:
+        self.integral = torch.tensor(0.0)
+        self.prev_error = torch.tensor(0.0)
+        self.e_k = torch.tensor(0.0)
+        self.e_k_1 = torch.tensor(0.0)
+        self.e_k_2 = torch.tensor(0.0)
+        self.u_k_1 = torch.tensor(0.0)
