@@ -98,7 +98,7 @@ def plot_simulation_results(
 
     plt.tight_layout()
     if session_name:
-        save_plot(fig, session_name, "simulation_results.png")
+        save_plot(fig, session_name, "simulation_results.pdf")
 
 
 def plot_position(
@@ -228,7 +228,7 @@ def plot_single_metric_comparison(
 
     plt.tight_layout(rect=(0., 0., 1., 0.95))
     if session_name:
-        save_plot(fig, session_name, f"{metric_name}.png")
+        save_plot(fig, session_name, f"{metric_name}.pdf")
 
 
 def plot_metric_distribution(ax, values, mean_value, std_value, title):
