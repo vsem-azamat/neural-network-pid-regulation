@@ -3,34 +3,36 @@ import torch
 from utils import save_load
 from models import LSTMAdaptivePID
 from entities.pid import PID
-from entities.systems import Trolley
+from entities.systems import Thermal
 from .utils import compare_controllers_simulation, compare_controllers_metrics
 
 
 if __name__ == "__main__":
-    dt = torch.tensor(0.02)
-    validation_time = 15
+    dt = torch.tensor(0.1)
+    validation_time = 300
     steps = int(validation_time / dt.item()) + 1
 
-    mass, spring, friction = torch.tensor(1.0), torch.tensor(0.5), torch.tensor(0.1)
-    trolley = Trolley(mass, spring, friction, dt)
+    thermal_capacity = torch.tensor(1000.0)  # J/K
+    heat_transfer_coefficient = torch.tensor(10.0)  # W/K
+    thermal = Thermal(thermal_capacity, heat_transfer_coefficient, dt)
+    thermal.temperature = torch.tensor(150.0) # Initial temperature [K]
 
-    initial_Kp, initial_Ki, initial_Kd = torch.tensor(5.0), torch.tensor(0.1), torch.tensor(1.0)
+    initial_Kp, initial_Ki, initial_Kd = torch.tensor(100.0), torch.tensor(1.0), torch.tensor(10.0)
     pid = PID(initial_Kp, initial_Ki, initial_Kd)
-    pid.set_limits(torch.tensor(50.0), torch.tensor(-50.0))
+    pid.set_limits(torch.tensor(100000.0), torch.tensor(0.0))  # Heat input can't be negative. [W]
 
     input_size, hidden_size, output_size = 5, 20, 3
     lstm_model = LSTMAdaptivePID(input_size, hidden_size, output_size)
-    lstm_model = save_load.load_model(lstm_model, "pid_lstm_trolley.pth")
+    lstm_model = save_load.load_model(lstm_model, "pid_lstm_thermal.pth")
 
-    session_name = "pid_lstm_trolley"
-
-    setpoints_interval = (-20, 20)
-    initial_pid_coefficients = (5.0, 0.5, 1.0)
-    pid_gain_factor = 20
+    session_name = "pid_lstm_thermal"
     
+    setpoints_interval = (160, 400)
+    initial_pid_coefficients = (10.0, 1.0, 10.0)
+    pid_gain_factor = 20
+
     compare_controllers_simulation(
-        trolley,
+        thermal,
         lstm_model,
         pid,
         dt,
@@ -42,8 +44,9 @@ if __name__ == "__main__":
         initial_pid_coefficients=initial_pid_coefficients,
         pid_gain_factor=pid_gain_factor
     )
+
     compare_controllers_metrics(
-        trolley,
+        thermal,
         lstm_model,
         pid,
         dt,
