@@ -1,11 +1,12 @@
-from abc import ABC, abstractmethod
+import torch
 from torch import Tensor
+from abc import ABC, abstractmethod
 
 
 class BaseSystem(ABC):
     @abstractmethod
     def apply_control(
-        self, control_output: Tensor, distrubance: Tensor | None = None
+        self, control_output: Tensor, distrubance: Tensor = torch.tensor(0.0)
     ) -> Tensor:
         """
         Update the position and velocity of the object
