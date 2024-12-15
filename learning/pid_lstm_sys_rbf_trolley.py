@@ -195,7 +195,7 @@ if __name__ == "__main__":
             rbf_model=rbf_model,
             simulation_config=validation_config,
             session="validation",
-            extract_rbf_input=extract_rbf_input,
+            extract_rbf_input=extract_rbf_input.trolley,
             extract_lstm_input=extract_lstm_input,
         )
         dynamic_plot.update_plot(
@@ -213,7 +213,7 @@ if __name__ == "__main__":
             simulation_config=validation_config,
             session="static",
             extract_lstm_input=extract_lstm_input,
-            extract_rbf_input=extract_rbf_input,
+            extract_rbf_input=extract_rbf_input.trolley,
         )
         dynamic_plot.update_plot(
             static_results,
