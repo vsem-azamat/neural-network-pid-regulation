@@ -78,3 +78,94 @@ def plot_combined_phase_diagram(data, labels, title, filename):
     plot_path = os.path.join(cnfg.SYSTEMS_PLOTS, filename)
     plt.savefig(plot_path, dpi=300)
     plt.show()
+
+
+def plot_velocity_responses(time_responses, labels, title, ylabel, filename):
+    """
+    Vykreslete rychlostní odezvy různých systémů.
+
+    Argumenty:
+        time_responses (list): Seznam dvojic obsahujících časové a odezvové pole.
+        labels (list): Seznam popisků pro odezvy.
+        title (str): Název grafu.
+        ylabel (str): Popisek osy y.
+        filename (str): Název souboru pro uložení grafu.
+    """
+    plt.figure()
+    for (time, response), label in zip(time_responses, labels):
+        velocity = np.gradient(response, time)
+        plt.plot(time, velocity, label=label)
+    plt.xlabel("Čas (s)")
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.legend()
+    plt.grid(True)
+    plot_path = os.path.join(cnfg.SYSTEMS_PLOTS, filename)
+    plt.savefig(plot_path)
+    plt.show()
+
+
+def plot_energy_responses(time_responses, labels, title, ylabel, filename):
+    """
+    Vykreslete energetické odezvy různých systémů.
+
+    Argumenty:
+        time_responses (list): Seznam dvojic obsahujících časové a odezvové pole.
+        labels (list): Seznam popisků pro odezvy.
+        title (str): Název grafu.
+        ylabel (str): Popisek osy y.
+        filename (str): Název souboru pro uložení grafu.
+    """
+    plt.figure()
+    for (time, response), label in zip(time_responses, labels):
+        velocity = np.gradient(response, time)
+        energy = 0.5 * np.array(response)**2 + 0.5 * np.array(velocity)**2
+        plt.plot(time, energy, label=label)
+    plt.xlabel("Čas (s)")
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.legend()
+    plt.grid(True)
+    plot_path = os.path.join(cnfg.SYSTEMS_PLOTS, filename)
+    plt.savefig(plot_path)
+    plt.show()
+
+
+def calculate_mse(source_responses, model_responses):
+    """
+    Vypočítejte střední kvadratickou chybu (MSE) mezi zdrojovými a modelovými odezvami.
+
+    Argumenty:
+        source_responses (list): Seznam zdrojových odezev.
+        model_responses (list): Seznam modelových odezev.
+
+    Návratová hodnota:
+        float: Střední kvadratická chyba.
+    """
+    mse = np.mean((np.array(source_responses) - np.array(model_responses))**2)
+    return mse
+
+def plot_comparison(source_responses, model_responses, time, labels, title, ylabel, filename):
+    """
+    Vykreslete porovnání zdrojových a modelových odezev.
+
+    Argumenty:
+        source_responses (list): Seznam zdrojových odezev.
+        model_responses (list): Seznam modelových odezev.
+        time (array): Časové pole.
+        labels (list): Seznam popisků pro odezvy.
+        title (str): Název grafu.
+        ylabel (str): Popisek osy y.
+        filename (str): Název souboru pro uložení grafu.
+    """
+    plt.figure()
+    plt.plot(time, source_responses, label=labels[0])
+    plt.plot(time, model_responses, label=labels[1], linestyle='--')
+    plt.xlabel("Čas (s)")
+    plt.ylabel(ylabel)
+    plt.title(title)
+    plt.legend()
+    plt.grid(True)
+    plot_path = os.path.join(cnfg.SYSTEMS_PLOTS, filename)
+    plt.savefig(plot_path)
+    plt.show()
