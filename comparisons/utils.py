@@ -23,7 +23,7 @@ def run_simulation_for_comparison(
 ) -> SimulationResults[torch.Tensor]:
     with torch.no_grad():
         trolley.reset()
-        results = SimulationResults().with_length(config.num_steps)
+        results = SimulationResults()
         hidden = None
 
         for step in range(config.num_steps):
@@ -31,9 +31,6 @@ def run_simulation_for_comparison(
             current_position = trolley.X
             setpoint = config.setpoints[step]
             error = setpoint - current_position
-            results.error_history[step] = error
-            error_diff = (error - results.error_history[step - 1]) if step > 0 else torch.tensor(0.0)
-            results.error_diff_history[step] = error_diff
 
             if lstm_regulator and step >= warm_up_steps:
                 update_pid_with_lstm(lstm_regulator, pid, config, results, hidden)
@@ -41,7 +38,7 @@ def run_simulation_for_comparison(
             control_output = pid.compute(error, config.dt)
             trolley.apply_control(control_output)
 
-            update_simulation_results(results, step, current_time, current_position, control_output, pid)
+            update_simulation_results(results, current_time, current_position, setpoint, control_output, pid)
 
     return results
 
@@ -61,18 +58,24 @@ def update_pid_with_lstm(
 
 def update_simulation_results(
     results: SimulationResults[torch.Tensor],
-    step: int,
     current_time: torch.Tensor,
     current_position: torch.Tensor,
+    setpoint: torch.Tensor,
     control_output: torch.Tensor,
     pid: PID
 ) -> None:
-    results.time_points[step] = current_time
-    results.positions[step] = current_position
-    results.control_outputs[step] = control_output
-    results.kp_values[step] = pid.Kp
-    results.ki_values[step] = pid.Ki
-    results.kd_values[step] = pid.Kd
+    error = setpoint - current_position
+    error_diff = (error - results.error_history[-1]) if results.error_history else torch.tensor(0.0)
+
+    results.setpoints.append(setpoint)
+    results.error_history.append(error)
+    results.error_diff_history.append(error_diff)
+    results.time_points.append(current_time)
+    results.positions.append(current_position)
+    results.control_outputs.append(control_output)
+    results.kp_values.append(pid.Kp)
+    results.ki_values.append(pid.Ki)
+    results.kd_values.append(pid.Kd)
 
 
 def plot_simulation_results(
@@ -177,24 +180,35 @@ def calculate_metrics(
     iae = np.trapezoid(np.abs(error), times)
     ise = np.trapezoid(error**2, times)
     itae = np.trapezoid(times * np.abs(error), times)
+    rise_time = calculate_rise_time(actual_positions, setpoint.item(), dt)
 
     return {
         "MSE": mse,
-        "SettlingTime": settling_time,
-        "Overshoot": overshoot,
+        "Doba ustálení (ts)": settling_time,
+        "Překmit (Mp)": overshoot,
         "IAE": iae,
         "ISE": ise,
         "ITAE": itae,
+        "Doba náběhu (tr)": rise_time,
     }
 
 
 def calculate_settling_time(error: np.ndarray, setpoint: float, dt: torch.Tensor) -> float:
-    threshold = 0.05 * abs(setpoint)
+    threshold = 0.02 * abs(setpoint)
     try:
         settling_idx = next(i for i, e in enumerate(np.abs(error)) if e < threshold)
     except StopIteration:
         settling_idx = len(error) - 1
     return settling_idx * dt.item()
+
+
+def calculate_rise_time(positions: List[torch.Tensor], setpoint: float, dt: torch.Tensor) -> float:
+    threshold_90 = 0.9 * abs(setpoint)
+    try:
+        rise_idx = next(i for i, p in enumerate(positions) if p >= threshold_90)
+    except StopIteration:
+        rise_idx = len(positions) - 1
+    return rise_idx * dt.item()
 
 
 def calculate_overshoot(actual_positions: List[torch.Tensor], setpoint: float) -> float:
