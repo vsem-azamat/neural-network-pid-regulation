@@ -264,12 +264,12 @@ def plot_rbf_training_results(
     Y_actual,
     losses: list[float],
     system_name="<System>",
-    state_label="Position",
+    state_label="Pozice",
     num_epochs: int | None = None,
     learning_rate: float | None = None,
     optimizer_name: str | None = None,
 ) -> None:
-    fig, axs = plt.subplots(1, 2, figsize=(20, 6))
+    fig, axs = plt.subplots(2, 1, figsize=(10, 10))
     axs[0].plot(
         control_inputs,
         Y_rbf,
@@ -281,21 +281,21 @@ def plot_rbf_training_results(
     axs[0].plot(
         control_inputs,
         Y_actual,
-        label="Actual System",
+        label="Skutečný systém",
         marker="x",
         linestyle="-",
         markersize=3,
     )
-    axs[0].set_title(f"Comparison of RBF Model vs Actual {system_name} System")
-    axs[0].set_xlabel("Control Input")
+    axs[0].set_title(f"Srovnání RBF modelu a skutečného systému {system_name}")
+    axs[0].set_xlabel("Řídicí vstup")
     axs[0].set_ylabel(state_label)
     axs[0].legend()
     axs[0].grid(True)
 
     axs[1].plot(range(len(losses)), losses)
-    axs[1].set_title(f"Training Losses for {system_name} RBF Model")
-    axs[1].set_xlabel("Training Steps")
-    axs[1].set_ylabel("Loss")
+    axs[1].set_title(f"Tréninkové ztráty pro RBF model {system_name}")
+    axs[1].set_xlabel("Tréninkové kroky")
+    axs[1].set_ylabel("Ztráta")
     axs[1].grid(True)
 
     plt.tight_layout()
