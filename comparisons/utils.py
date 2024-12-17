@@ -1,11 +1,12 @@
 import os
-import random
+from turtle import title
 import torch
+import random
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
-from typing import Any, Optional, List, Dict
+from typing import Any, Optional, List, Dict, Literal
 
 from config import cnfg
 from entities.pid import PID
@@ -84,7 +85,8 @@ def plot_simulation_results(
     setpoint: float | int,
     warm_up_steps: int,
     dt: float | int,
-    session_name: Optional[str] = None
+    session_name: Optional[str] = None,
+    method_name: str = ""
 ) -> None:
     sns.set_context("notebook")
     sns.set_style("whitegrid")
@@ -99,6 +101,9 @@ def plot_simulation_results(
     plot_control_output(axs[1], lstm_results, default_results, warm_up_steps, dt)
     plot_pid_parameters(axs[2], lstm_results, default_results, warm_up_steps, dt)
 
+    title = f"Výsledky simulace"
+    if method_name: title += f" metoda: {method_name}"
+    fig.suptitle(title, fontweight="bold", y=0.98)
     plt.tight_layout()
     if session_name:
         save_plot(fig, session_name, "simulation_results.pdf")
@@ -286,25 +291,31 @@ def compare_controllers_simulation(
     random_disturbance: bool = False,
     session_name: Optional[str] = None,
     setpoints_interval: tuple = (-20, 20),
-    initial_pid_coefficients: tuple = (5.0, 0.5, 1.0),
-    pid_gain_factor: int = 50
+    pid_gain_factor: int = 50,
+    method_name: Literal["ziegler_nichols", "cohen_coon", "pid_imc"] = "cohen_coon",
 ) -> None:
     disturbance = float(np.random.uniform(-0.5, 0.5)) if random_disturbance else 0.0
     setpoint_val = random.randint(*setpoints_interval)
     setpoints = [torch.tensor(setpoint_val) for _ in range(steps)] 
     config = SimulationConfig(setpoints=setpoints, dt=dt, pid_gain_factor=pid_gain_factor)
 
+    Kp_, Ki_, Kd_ = trolley.tune_pid(
+        dt=dt.item(),
+        steps=steps,
+        method=method_name
+    )
+    Kp, Ki, Kd = map(torch.tensor, (Kp_, Ki_, Kd_))
+    pid.update_gains(Kp, Ki, Kd)
+
     pid.reset()
     trolley.reset()
     default_results = run_simulation_for_comparison(trolley, pid, None, config, warm_up_steps)
 
-    initial_Kp, initial_Ki, initial_Kd = map(torch.tensor, initial_pid_coefficients)
     pid.reset()
-    pid.update_gains(initial_Kp, initial_Ki, initial_Kd)
     trolley.reset()
     lstm_results = run_simulation_for_comparison(trolley, pid, lstm_regulator, config, warm_up_steps)
 
-    plot_simulation_results(lstm_results, default_results, setpoints[-1].item(), warm_up_steps, dt.item(), session_name)
+    plot_simulation_results(lstm_results, default_results, setpoints[-1].item(), warm_up_steps, dt.item(), session_name, method_name)
 
 
 def compare_controllers_metrics(
@@ -318,7 +329,6 @@ def compare_controllers_metrics(
     random_disturbance: bool = False,
     session_name: Optional[str] = None,
     setpoints_interval: tuple = (-20, 20),
-    initial_pid_coefficients: tuple = (5.0, 0.5, 1.0),
     pid_gain_factor: int = 50
 ) -> None:
     lstm_metrics_all = []
@@ -330,13 +340,18 @@ def compare_controllers_metrics(
         setpoints = [torch.tensor(setpoint_val) for _ in range(steps)] 
         config = SimulationConfig(setpoints=setpoints, dt=dt, pid_gain_factor=pid_gain_factor)
 
+        Kp_, Ki_, Kd_ = trolley.tune_pid(
+            dt=dt.item(),
+            steps=steps
+        )
+        Kp, Ki, Kd = map(torch.tensor, (Kp_, Ki_, Kd_))
+        pid.update_gains(Kp, Ki, Kd)
+
         pid.reset()
         trolley.reset()
         default_results = run_simulation_for_comparison(trolley, pid, None, config, warm_up_steps)
 
-        initial_Kp, initial_Ki, initial_Kd = map(torch.tensor, initial_pid_coefficients)
         pid.reset()
-        pid.update_gains(initial_Kp, initial_Ki, initial_Kd)
         trolley.reset()
         lstm_results = run_simulation_for_comparison(trolley, pid, lstm_regulator, config, warm_up_steps)
 

@@ -27,7 +27,7 @@ if __name__ == "__main__":
 
     setpoints_interval = (-20, 20)
     initial_pid_coefficients = (5.0, 0.5, 1.0)
-    pid_gain_factor = 20
+    pid_gain_factor = 10
     
     compare_controllers_simulation(
         trolley,
@@ -39,7 +39,6 @@ if __name__ == "__main__":
         random_disturbance=True,
         session_name=session_name,
         setpoints_interval=setpoints_interval,
-        initial_pid_coefficients=initial_pid_coefficients,
         pid_gain_factor=pid_gain_factor
     )
     compare_controllers_metrics(
@@ -53,6 +52,5 @@ if __name__ == "__main__":
         random_disturbance=True,
         session_name=session_name,
         setpoints_interval=setpoints_interval,
-        initial_pid_coefficients=initial_pid_coefficients,
         pid_gain_factor=pid_gain_factor
     )

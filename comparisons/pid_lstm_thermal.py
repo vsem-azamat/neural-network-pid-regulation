@@ -28,8 +28,7 @@ if __name__ == "__main__":
     session_name = "pid_lstm_thermal"
     
     setpoints_interval = (160, 400)
-    initial_pid_coefficients = (10.0, 1.0, 10.0)
-    pid_gain_factor = 20
+    pid_gain_factor = 100
 
     compare_controllers_simulation(
         thermal,
@@ -41,7 +40,6 @@ if __name__ == "__main__":
         random_disturbance=True,
         session_name=session_name,
         setpoints_interval=setpoints_interval,
-        initial_pid_coefficients=initial_pid_coefficients,
         pid_gain_factor=pid_gain_factor
     )
 
@@ -56,6 +54,5 @@ if __name__ == "__main__":
         random_disturbance=True,
         session_name=session_name,
         setpoints_interval=setpoints_interval,
-        initial_pid_coefficients=initial_pid_coefficients,
         pid_gain_factor=pid_gain_factor
     )
