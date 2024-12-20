@@ -39,7 +39,7 @@ class NonLinearPendulumCart(BaseSystem):
         self.theta_dot = torch.tensor(0.0)  # Pendulum angular velocity (rad/s)
 
     def apply_control(
-        self, control_output: Tensor, distrubance: Tensor = torch.tensor(0.0)
+        self, control_output: Tensor, disturbance: Tensor = torch.tensor(0.0)
     ) -> Tensor:
         """
         Update the state of the system based on the control output.
@@ -52,7 +52,7 @@ class NonLinearPendulumCart(BaseSystem):
             Tensor: Current state vector [x, x_dot, theta, theta_dot]
         """
         assert control_output is not None, "Control output is None"
-        F = control_output + distrubance
+        F = control_output + disturbance
 
         # Simplify notation
         x, x_dot = self.x, self.x_dot

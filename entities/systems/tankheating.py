@@ -14,7 +14,7 @@ class TankHeating(BaseSystem):
         self.Q: Tensor = torch.tensor(2.0)
 
     def apply_control(
-        self, control_output: Tensor, distrubance: Tensor = torch.tensor(0.0)
+        self, control_output: Tensor, disturbance: Tensor = torch.tensor(0.0)
     ) -> Tensor:
         """
         Update the temperature of the tank based on the control output

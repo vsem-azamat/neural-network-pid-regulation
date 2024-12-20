@@ -8,14 +8,14 @@ from typing import Literal
 class BaseSystem(ABC):
     @abstractmethod
     def apply_control(
-        self, control_output: Tensor, distrubance: Tensor = torch.tensor(0.0)
+        self, control_output: Tensor, disturbance: Tensor = torch.tensor(0.0)
     ) -> Tensor:
         """
         Update the position and velocity of the object
 
         Args:
                 control_output (float): control output applied to the object
-                distrubance (float): distrubance applied to the object
+                disturbance (float): distrubance applied to the object
 
         Returns:
                 None

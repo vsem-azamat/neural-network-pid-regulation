@@ -26,7 +26,7 @@ class Trolley(BaseSystem):
         self.acceleration = torch.tensor(0.0)
 
     def apply_control(
-        self, control_output: Tensor, distrubance: Tensor = torch.tensor(0.0)
+        self, control_output: Tensor, disturbance: Tensor = torch.tensor(0.0)
     ) -> Tensor:
         """
             Update the position and velocity of the trolley based on the control output
@@ -44,7 +44,7 @@ class Trolley(BaseSystem):
             F / self.mass
             - self.friction * self.velocity.clone().detach() / self.mass
             - self.spring * self.position.clone().detach() / self.mass
-            - distrubance / self.mass
+            - disturbance / self.mass
         )
         self.velocity = self.velocity.clone().detach() + self.acceleration * self.dt
         self.position = self.position.clone().detach() + self.velocity * self.dt
