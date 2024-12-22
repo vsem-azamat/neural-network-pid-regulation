@@ -6,7 +6,11 @@ from .base import BaseSystem
 
 class Thermal(BaseSystem):
     def __init__(
-        self, thermal_capacity: Tensor, heat_transfer_coefficient: Tensor, dt: Tensor
+        self,
+        thermal_capacity: Tensor,
+        heat_transfer_coefficient: Tensor,
+        dt: Tensor,
+        initial_temperature: Tensor = torch.tensor(293.15),  # 20°C in Kelvin
     ) -> None:
         """
         A simple first-order thermal system.
@@ -19,7 +23,8 @@ class Thermal(BaseSystem):
         self.thermal_capacity = thermal_capacity
         self.heat_transfer_coefficient = heat_transfer_coefficient
         self.dt = dt
-        self.temperature = torch.tensor(293.15)  # Starting at 20°C in Kelvin
+        self.initial_temperature = initial_temperature
+        self.temperature = self.initial_temperature.clone()
         self.temp_derivative = torch.tensor(0.0)  # dT/dt
 
     def apply_control(
@@ -45,7 +50,7 @@ class Thermal(BaseSystem):
 
     def reset(self) -> None:
         """Reset the system temperature to initial conditions"""
-        self.temperature = torch.tensor(293.15)
+        self.temperature = self.initial_temperature.clone()
         self.temp_derivative = torch.tensor(0.0)
 
     @property
