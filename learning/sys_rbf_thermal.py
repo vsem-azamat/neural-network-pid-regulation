@@ -94,14 +94,14 @@ if __name__ == "__main__":
     batch_size = 32
 
     losses = train_rbf_model(
-        rbf_model, 
-        X, 
+        rbf_model,
+        X,
         y,
         num_epochs=num_epochs,
         batch_size=batch_size,
         learning_rate=lr,
         optimizer=optimizer_name,
-        gradient_clip_value=gradient_clip_value, 
+        gradient_clip_value=gradient_clip_value,
     )
 
     # Save the trained RBF model

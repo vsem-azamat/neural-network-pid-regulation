@@ -11,7 +11,9 @@ if __name__ == "__main__":
     # Parameters for the tank heating system
     tank_heating_system = TankHeating(dt=torch.tensor(0.05))  # Time step (s)
     tank_heating_system.T = torch.tensor(300.0)  # Initial temperature (K)
-    tank_heating_system.Tf = torch.tensor(350.0)  # Temperature of the incoming fluid (K)
+    tank_heating_system.Tf = torch.tensor(
+        350.0
+    )  # Temperature of the incoming fluid (K)
     tank_heating_system.epsilon = torch.tensor(0.5)  # Heat capacity ratio
     tank_heating_system.tau = torch.tensor(2.0)  # Residence time (s)
     tank_heating_system.Q = torch.tensor(5.0)  # Heat transfer coefficient

@@ -25,7 +25,7 @@ def extract_lstm_input(
     setpoint_history_len = min(
         simulation_config.sequence_length, len(results.setpoints)
     )
-    
+
     kp_values_len = min(simulation_config.sequence_length, len(results.kp_values))
     ki_values_len = min(simulation_config.sequence_length, len(results.ki_values))
     kd_values_len = min(simulation_config.sequence_length, len(results.kd_values))

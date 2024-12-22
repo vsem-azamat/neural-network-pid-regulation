@@ -119,7 +119,7 @@ def plot_energy_responses(time_responses, labels, title, ylabel, filename):
     plt.figure()
     for (time, response), label in zip(time_responses, labels):
         velocity = np.gradient(response, time)
-        energy = 0.5 * np.array(response)**2 + 0.5 * np.array(velocity)**2
+        energy = 0.5 * np.array(response) ** 2 + 0.5 * np.array(velocity) ** 2
         plt.plot(time, energy, label=label)
     plt.xlabel("Čas (s)")
     plt.ylabel(ylabel)
@@ -142,10 +142,13 @@ def calculate_mse(source_responses, model_responses):
     Návratová hodnota:
         float: Střední kvadratická chyba.
     """
-    mse = np.mean((np.array(source_responses) - np.array(model_responses))**2)
+    mse = np.mean((np.array(source_responses) - np.array(model_responses)) ** 2)
     return mse
 
-def plot_comparison(source_responses, model_responses, time, labels, title, ylabel, filename):
+
+def plot_comparison(
+    source_responses, model_responses, time, labels, title, ylabel, filename
+):
     """
     Vykreslete porovnání zdrojových a modelových odezev.
 
@@ -160,7 +163,7 @@ def plot_comparison(source_responses, model_responses, time, labels, title, ylab
     """
     plt.figure()
     plt.plot(time, source_responses, label=labels[0])
-    plt.plot(time, model_responses, label=labels[1], linestyle='--')
+    plt.plot(time, model_responses, label=labels[1], linestyle="--")
     plt.xlabel("Čas (s)")
     plt.ylabel(ylabel)
     plt.title(title)
