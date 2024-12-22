@@ -39,7 +39,9 @@ def run_simulation_for_comparison(
             control_output = pid.compute(error, config.dt)
             trolley.apply_control(control_output)
 
-            update_simulation_results(results, current_time, current_position, setpoint, control_output, pid)
+            update_simulation_results(
+                results, current_time, current_position, setpoint, control_output, pid
+            )
 
     return results
 
@@ -49,7 +51,7 @@ def update_pid_with_lstm(
     pid: PID,
     config: SimulationConfig[torch.Tensor],
     results: SimulationResults[torch.Tensor],
-    hidden: Optional[torch.Tensor]
+    hidden: Optional[torch.Tensor],
 ) -> None:
     lstm_input = extract_lstm_input(config, results)
     pid_params, hidden = lstm_regulator(lstm_input, hidden)
@@ -63,10 +65,14 @@ def update_simulation_results(
     current_position: torch.Tensor,
     setpoint: torch.Tensor,
     control_output: torch.Tensor,
-    pid: PID
+    pid: PID,
 ) -> None:
     error = setpoint - current_position
-    error_diff = (error - results.error_history[-1]) if results.error_history else torch.tensor(0.0)
+    error_diff = (
+        (error - results.error_history[-1])
+        if results.error_history
+        else torch.tensor(0.0)
+    )
 
     results.setpoints.append(setpoint)
     results.error_history.append(error)
@@ -86,7 +92,7 @@ def plot_simulation_results(
     warm_up_steps: int,
     dt: float | int,
     session_name: Optional[str] = None,
-    method_name: str = ""
+    method_name: str = "",
 ) -> None:
     sns.set_context("notebook")
     sns.set_style("whitegrid")
@@ -102,7 +108,8 @@ def plot_simulation_results(
     plot_pid_parameters(axs[2], lstm_results, default_results, warm_up_steps, dt)
 
     title = f"Výsledky simulace"
-    if method_name: title += f" metoda: {method_name}"
+    if method_name:
+        title += f" metoda: {method_name}"
     fig.suptitle(title, fontweight="bold", y=0.98)
     plt.tight_layout()
     if session_name:
@@ -115,12 +122,26 @@ def plot_position(
     default_results: SimulationResults[torch.Tensor],
     setpoint: float | int,
     warm_up_steps: int,
-    dt: float | int
+    dt: float | int,
 ) -> None:
-    ax.plot(lstm_results.time_points, lstm_results.positions, label="LSTM PID", color="#1f77b4", linewidth=2)
-    ax.plot(default_results.time_points, default_results.positions, label="Default PID", color="#ff7f0e", linewidth=2)
+    ax.plot(
+        lstm_results.time_points,
+        lstm_results.positions,
+        label="LSTM PID",
+        color="#1f77b4",
+        linewidth=2,
+    )
+    ax.plot(
+        default_results.time_points,
+        default_results.positions,
+        label="Default PID",
+        color="#ff7f0e",
+        linewidth=2,
+    )
     ax.axhline(y=setpoint, color="r", linestyle="--", label="Setpoint", linewidth=2)
-    ax.axvline(x=warm_up_steps * dt, color="g", linestyle="--", label="LSTM Start", linewidth=2)
+    ax.axvline(
+        x=warm_up_steps * dt, color="g", linestyle="--", label="LSTM Start", linewidth=2
+    )
     ax.set_title("Pozice", fontweight="bold")
     ax.set_xlabel("Čas (s)")
     ax.set_ylabel("Pozice")
@@ -132,10 +153,22 @@ def plot_control_output(
     lstm_results: SimulationResults[torch.Tensor],
     default_results: SimulationResults[torch.Tensor],
     warm_up_steps: int,
-    dt: float | int
+    dt: float | int,
 ) -> None:
-    ax.plot(lstm_results.time_points, lstm_results.control_outputs, label="LSTM Control", color="#2ca02c", linewidth=2)
-    ax.plot(default_results.time_points, default_results.control_outputs, label="Default Control", color="#d62728", linewidth=2)
+    ax.plot(
+        lstm_results.time_points,
+        lstm_results.control_outputs,
+        label="LSTM Control",
+        color="#2ca02c",
+        linewidth=2,
+    )
+    ax.plot(
+        default_results.time_points,
+        default_results.control_outputs,
+        label="Default Control",
+        color="#d62728",
+        linewidth=2,
+    )
     ax.axvline(x=warm_up_steps * dt, color="g", linestyle="--", linewidth=2)
     ax.set_title("Řídicí výstup", fontweight="bold")
     ax.set_xlabel("Čas (s)")
@@ -148,14 +181,53 @@ def plot_pid_parameters(
     lstm_results: SimulationResults[torch.Tensor],
     default_results: SimulationResults[torch.Tensor],
     warm_up_steps: int,
-    dt: float | int
+    dt: float | int,
 ) -> None:
-    ax.plot(lstm_results.time_points, lstm_results.kp_values, label="LSTM Kp", color="#1f77b4", linewidth=2)
-    ax.plot(lstm_results.time_points, lstm_results.ki_values, label="LSTM Ki", color="#ff7f0e", linewidth=2)
-    ax.plot(lstm_results.time_points, lstm_results.kd_values, label="LSTM Kd", color="#2ca02c", linewidth=2)
-    ax.plot(default_results.time_points, default_results.kp_values, label="Default Kp", color="#1f77b4", linestyle="--", linewidth=2)
-    ax.plot(default_results.time_points, default_results.ki_values, label="Default Ki", color="#ff7f0e", linestyle="--", linewidth=2)
-    ax.plot(default_results.time_points, default_results.kd_values, label="Default Kd", color="#2ca02c", linestyle="--", linewidth=2)
+    ax.plot(
+        lstm_results.time_points,
+        lstm_results.kp_values,
+        label="LSTM Kp",
+        color="#1f77b4",
+        linewidth=2,
+    )
+    ax.plot(
+        lstm_results.time_points,
+        lstm_results.ki_values,
+        label="LSTM Ki",
+        color="#ff7f0e",
+        linewidth=2,
+    )
+    ax.plot(
+        lstm_results.time_points,
+        lstm_results.kd_values,
+        label="LSTM Kd",
+        color="#2ca02c",
+        linewidth=2,
+    )
+    ax.plot(
+        default_results.time_points,
+        default_results.kp_values,
+        label="Default Kp",
+        color="#1f77b4",
+        linestyle="--",
+        linewidth=2,
+    )
+    ax.plot(
+        default_results.time_points,
+        default_results.ki_values,
+        label="Default Ki",
+        color="#ff7f0e",
+        linestyle="--",
+        linewidth=2,
+    )
+    ax.plot(
+        default_results.time_points,
+        default_results.kd_values,
+        label="Default Kd",
+        color="#2ca02c",
+        linestyle="--",
+        linewidth=2,
+    )
     ax.axvline(x=warm_up_steps * dt, color="g", linestyle="--", linewidth=2)
     ax.set_title("PID parametry", fontweight="bold")
     ax.set_xlabel("Čas (s)")
@@ -173,7 +245,7 @@ def calculate_metrics(
     positions: List[torch.Tensor],
     setpoint: torch.Tensor,
     start_index: int,
-    dt: torch.Tensor
+    dt: torch.Tensor,
 ) -> Dict[str, Any]:
     actual_positions = positions[start_index:]
     times = np.arange(len(actual_positions)) * dt.item()
@@ -198,7 +270,9 @@ def calculate_metrics(
     }
 
 
-def calculate_settling_time(error: np.ndarray, setpoint: float, dt: torch.Tensor) -> float:
+def calculate_settling_time(
+    error: np.ndarray, setpoint: float, dt: torch.Tensor
+) -> float:
     threshold = 0.02 * abs(setpoint)
     try:
         settling_idx = next(i for i, e in enumerate(np.abs(error)) if e < threshold)
@@ -207,7 +281,9 @@ def calculate_settling_time(error: np.ndarray, setpoint: float, dt: torch.Tensor
     return settling_idx * dt.item()
 
 
-def calculate_rise_time(positions: List[torch.Tensor], setpoint: float, dt: torch.Tensor) -> float:
+def calculate_rise_time(
+    positions: List[torch.Tensor], setpoint: float, dt: torch.Tensor
+) -> float:
     threshold_90 = 0.9 * abs(setpoint)
     try:
         rise_idx = next(i for i, p in enumerate(positions) if p >= threshold_90)
@@ -226,7 +302,7 @@ def plot_single_metric_comparison(
     default_metric_values: List[float],
     metric_name: str,
     title_prefix: str = "",
-    session_name: Optional[str] = None
+    session_name: Optional[str] = None,
 ) -> None:
     sns.set_context("notebook")
     sns.set_style("whitegrid")
@@ -242,19 +318,43 @@ def plot_single_metric_comparison(
     fig, axs = plt.subplots(2, 1, figsize=(12, 8))
     fig.suptitle(f"{title_prefix} {metric_name} Distribuce", fontweight="bold", y=0.98)
 
-    plot_metric_distribution(axs[0], default_values, default_mean_value, default_std_value, "PID standardní")
-    plot_metric_distribution(axs[1], lstm_values, lstm_mean_value, lstm_std_value, "PID s LSTM")
+    plot_metric_distribution(
+        axs[0], default_values, default_mean_value, default_std_value, "PID standardní"
+    )
+    plot_metric_distribution(
+        axs[1], lstm_values, lstm_mean_value, lstm_std_value, "PID s LSTM"
+    )
 
-    plt.tight_layout(rect=(0., 0., 1., 0.95))
+    plt.tight_layout(rect=(0.0, 0.0, 1.0, 0.95))
     if session_name:
         save_plot(fig, session_name, f"{metric_name}.pdf")
 
 
 def plot_metric_distribution(ax, values, mean_value, std_value, title):
-    sns.histplot(values, ax=ax, kde=True, color='#4c72b0', bins=10, edgecolor="black", alpha=0.8)
-    ax.axvline(mean_value, color='r', linestyle='--', linewidth=2, label=f'Mean: {mean_value:.2f}')
-    ax.axvline(mean_value + std_value, color='g', linestyle='--', linewidth=2, label=f'Std Dev: +{std_value:.2f}')
-    ax.axvline(mean_value - std_value, color='g', linestyle='--', linewidth=2, label=f'Std Dev: -{std_value:.2f}')
+    sns.histplot(
+        values, ax=ax, kde=True, color="#4c72b0", bins=10, edgecolor="black", alpha=0.8
+    )
+    ax.axvline(
+        mean_value,
+        color="r",
+        linestyle="--",
+        linewidth=2,
+        label=f"Mean: {mean_value:.2f}",
+    )
+    ax.axvline(
+        mean_value + std_value,
+        color="g",
+        linestyle="--",
+        linewidth=2,
+        label=f"Std Dev: +{std_value:.2f}",
+    )
+    ax.axvline(
+        mean_value - std_value,
+        color="g",
+        linestyle="--",
+        linewidth=2,
+        label=f"Std Dev: -{std_value:.2f}",
+    )
     ax.set_title(title, fontweight="bold")
     ax.set_xlabel("Hodnota")
     ax.set_ylabel("Počet simulací")
@@ -265,7 +365,7 @@ def plot_aggregated_metrics_comparison(
     lstm_metrics_list: List[Dict[str, float]],
     default_metrics_list: List[Dict[str, float]],
     title_prefix: str = "",
-    session_name: Optional[str] = None
+    session_name: Optional[str] = None,
 ) -> None:
     keys = lstm_metrics_list[0].keys()
     lstm_data = {k: [m[k] for m in lstm_metrics_list] for k in keys}
@@ -292,30 +392,42 @@ def compare_controllers_simulation(
     session_name: Optional[str] = None,
     setpoints_interval: tuple = (-20, 20),
     pid_gain_factor: int = 50,
-    method_name: Literal["ziegler_nichols", "cohen_coon", "pid_imc"] = "cohen_coon",
+    tuning_method: Literal[
+        "ziegler_nichols", "cohen_coon", "pid_imc"
+    ] = "ziegler_nichols",
 ) -> None:
     disturbance = float(np.random.uniform(-0.5, 0.5)) if random_disturbance else 0.0
     setpoint_val = random.randint(*setpoints_interval)
-    setpoints = [torch.tensor(setpoint_val) for _ in range(steps)] 
-    config = SimulationConfig(setpoints=setpoints, dt=dt, pid_gain_factor=pid_gain_factor)
-
-    Kp_, Ki_, Kd_ = trolley.tune_pid(
-        dt=dt.item(),
-        steps=steps,
-        method=method_name
+    setpoints = [torch.tensor(setpoint_val) for _ in range(steps)]
+    config = SimulationConfig(
+        setpoints=setpoints, dt=dt, pid_gain_factor=pid_gain_factor
     )
+
+    Kp_, Ki_, Kd_ = trolley.tune_pid(dt=dt.item(), steps=steps, method=tuning_method)
     Kp, Ki, Kd = map(torch.tensor, (Kp_, Ki_, Kd_))
     pid.update_gains(Kp, Ki, Kd)
 
     pid.reset()
     trolley.reset()
-    default_results = run_simulation_for_comparison(trolley, pid, None, config, warm_up_steps)
+    default_results = run_simulation_for_comparison(
+        trolley, pid, None, config, warm_up_steps
+    )
 
     pid.reset()
     trolley.reset()
-    lstm_results = run_simulation_for_comparison(trolley, pid, lstm_regulator, config, warm_up_steps)
+    lstm_results = run_simulation_for_comparison(
+        trolley, pid, lstm_regulator, config, warm_up_steps
+    )
 
-    plot_simulation_results(lstm_results, default_results, setpoints[-1].item(), warm_up_steps, dt.item(), session_name, method_name)
+    plot_simulation_results(
+        lstm_results,
+        default_results,
+        setpoints[-1].item(),
+        warm_up_steps,
+        dt.item(),
+        session_name,
+        tuning_method,
+    )
 
 
 def compare_controllers_metrics(
@@ -329,7 +441,10 @@ def compare_controllers_metrics(
     random_disturbance: bool = False,
     session_name: Optional[str] = None,
     setpoints_interval: tuple = (-20, 20),
-    pid_gain_factor: int = 50
+    pid_gain_factor: int = 50,
+    tuning_method: Literal[
+        "ziegler_nichols", "cohen_coon", "pid_imc"
+    ] = "ziegler_nichols",
 ) -> None:
     lstm_metrics_all = []
     default_metrics_all = []
@@ -337,26 +452,35 @@ def compare_controllers_metrics(
     for run_idx in range(runs):
         disturbance = float(np.random.uniform(-0.5, 0.5)) if random_disturbance else 0.0
         setpoint_val = random.randint(*setpoints_interval)
-        setpoints = [torch.tensor(setpoint_val) for _ in range(steps)] 
-        config = SimulationConfig(setpoints=setpoints, dt=dt, pid_gain_factor=pid_gain_factor)
+        setpoints = [torch.tensor(setpoint_val) for _ in range(steps)]
+        config = SimulationConfig(
+            setpoints=setpoints, dt=dt, pid_gain_factor=pid_gain_factor
+        )
 
         Kp_, Ki_, Kd_ = trolley.tune_pid(
-            dt=dt.item(),
-            steps=steps
+            dt=dt.item(), steps=steps, method=tuning_method
         )
         Kp, Ki, Kd = map(torch.tensor, (Kp_, Ki_, Kd_))
         pid.update_gains(Kp, Ki, Kd)
 
         pid.reset()
         trolley.reset()
-        default_results = run_simulation_for_comparison(trolley, pid, None, config, warm_up_steps)
+        default_results = run_simulation_for_comparison(
+            trolley, pid, None, config, warm_up_steps
+        )
 
         pid.reset()
         trolley.reset()
-        lstm_results = run_simulation_for_comparison(trolley, pid, lstm_regulator, config, warm_up_steps)
+        lstm_results = run_simulation_for_comparison(
+            trolley, pid, lstm_regulator, config, warm_up_steps
+        )
 
-        lstm_m = calculate_metrics(lstm_results.positions, setpoints[-1], warm_up_steps, dt)
-        default_m = calculate_metrics(default_results.positions, setpoints[-1], warm_up_steps, dt)
+        lstm_m = calculate_metrics(
+            lstm_results.positions, setpoints[-1], warm_up_steps, dt
+        )
+        default_m = calculate_metrics(
+            default_results.positions, setpoints[-1], warm_up_steps, dt
+        )
 
         lstm_metrics_all.append(lstm_m)
         default_metrics_all.append(default_m)
@@ -365,14 +489,16 @@ def compare_controllers_metrics(
     print_aggregated_stats(default_metrics_all, "Default PID", runs)
 
     plot_aggregated_metrics_comparison(
-        lstm_metrics_all, 
-        default_metrics_all, 
+        lstm_metrics_all,
+        default_metrics_all,
         title_prefix="Porovnání PID regulátorů:",
-        session_name=session_name
+        session_name=session_name,
     )
 
 
-def print_aggregated_stats(metrics_list: List[Dict[str, float]], name: str, runs: int) -> None:
+def print_aggregated_stats(
+    metrics_list: List[Dict[str, float]], name: str, runs: int
+) -> None:
     avg_metrics = {k: np.mean([m[k] for m in metrics_list]) for k in metrics_list[0]}
     std_metrics = {k: np.std([m[k] for m in metrics_list]) for k in metrics_list[0]}
     print(f"\n{name} Metrics over {runs} runs:")
