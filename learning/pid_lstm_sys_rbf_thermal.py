@@ -8,6 +8,7 @@ from models.pid_lstm import LSTMAdaptivePID
 from utils import save_load
 from utils.plot import DynamicPlot
 from utils.run import run_simulation
+from config import load_config
 from learning.utils import extract_rbf_input
 from classes.simulation import SimulationConfig, SimulationResults, LearningConfig
 
@@ -83,12 +84,14 @@ def custom_loss(
     return loss
 
 
+config = load_config("thermal")
+
 if __name__ == "__main__":
     learning_config = LearningConfig(
-        dt=torch.tensor(0.2),
-        num_epochs=10,
-        train_time=200.0,
-        learning_rate=0.01,
+        dt=torch.tensor(config.learning.dt),
+        num_epochs=config.learning.lstm.num_epochs,
+        train_time=config.learning.lstm.train_time,
+        learning_rate=config.learning.lstm.optimizer.lr,
     )
     dt, num_epochs, train_steps, lr = (
         learning_config.dt,
@@ -97,14 +100,18 @@ if __name__ == "__main__":
         learning_config.learning_rate,
     )
 
-    thermal_capacity = torch.tensor(1000.0)  # J/K
-    heat_transfer_coefficient = torch.tensor(10.0)  # W/K
+    thermal_capacity = torch.tensor(config.system["thermal_capacity"])  # J/K
+    heat_transfer_coefficient = torch.tensor(config.system["heat_transfer_coefficient"])  # W/K
     initial_Kp, initial_Ki, initial_Kd = (
         torch.tensor(100.0),
         torch.tensor(1.0),
         torch.tensor(10.0),
     )
-    input_size, hidden_size, output_size = 5, 20, 3
+    input_size, hidden_size, output_size = (
+        config.learning.lstm.model.input_size,
+        config.learning.lstm.model.hidden_size,
+        config.learning.lstm.model.output_size,
+    )
 
     thermal = Thermal(thermal_capacity, heat_transfer_coefficient, dt)
     pid = PID(initial_Kp, initial_Ki, initial_Kd)

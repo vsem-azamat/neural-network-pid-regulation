@@ -6,6 +6,10 @@ from entities.systems.trolley import Trolley
 from utils import save_load
 from utils.run import train_rbf_model
 from utils.plot import plot_rbf_training_results
+from config import load_config
+
+
+config = load_config("trolley")
 
 
 def generate_training_data(trolley: Trolley, num_samples: int = 1000):
@@ -80,10 +84,10 @@ def compare_predictions(model, trolley: Trolley, num_steps=200):
 if __name__ == "__main__":
     # Initialize the Trolley system
     trolley = Trolley(
-        mass=torch.tensor(1.0),
-        spring=torch.tensor(0.5),
-        friction=torch.tensor(0.1),
-        dt=torch.tensor(0.1),
+        mass=torch.tensor(config.system["mass"]),
+        spring=torch.tensor(config.system["spring"]),
+        friction=torch.tensor(config.system["friction"]),
+        dt=torch.tensor(config.learning.dt),
     )
 
     # Generate training data
@@ -101,23 +105,20 @@ if __name__ == "__main__":
         input_std=X_std,
         output_mean=y_mean,
         output_std=y_std,
-        hidden_features=20,
+        hidden_features=config.learning.rbf.model.hidden_size,
     )
 
     # Training settings
-    lr = 0.001
     optimizer_name = "adam"
     gradient_clip_value = None
-    num_epochs = 1000
-    batch_size = 64
 
     losses = train_rbf_model(
         rbf_model,
         X,
         y,
-        num_epochs=num_epochs,
-        batch_size=batch_size,
-        learning_rate=lr,
+        num_epochs=config.learning.rbf.num_epochs,
+        batch_size=config.learning.rbf.batch_size,
+        learning_rate=config.learning.rbf.lr,
         optimizer=optimizer_name,
         gradient_clip_value=gradient_clip_value,
     )  # Increased epochs
@@ -138,8 +139,8 @@ if __name__ == "__main__":
         losses,
         system_name="Trolley",
         state_label="Position (m)",
-        num_epochs=num_epochs,
-        learning_rate=lr,
+        num_epochs=config.learning.rbf.num_epochs,
+        learning_rate=config.learning.rbf.lr,
         optimizer_name=optimizer_name,
     )
 

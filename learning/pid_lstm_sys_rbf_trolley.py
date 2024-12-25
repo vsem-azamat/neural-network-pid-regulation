@@ -8,15 +8,22 @@ from models.pid_lstm import LSTMAdaptivePID
 from utils import save_load
 from utils.plot import DynamicPlot
 from utils.run import run_simulation
+from config import load_config
 from learning.utils import extract_rbf_input
 from classes.simulation import SimulationConfig, SimulationResults, LearningConfig
+
+
+config = load_config("trolley")
 
 
 def extract_lstm_input(
     simulation_config: SimulationConfig,
     results: SimulationResults,
 ) -> torch.Tensor:
-    input_array = torch.zeros(5, simulation_config.sequence_length)
+    input_array = torch.zeros(
+        config.learning.lstm.model.input_size,
+        simulation_config.sequence_length,
+    )
 
     # Populate input array with historical data
     position_history_len = min(
@@ -101,48 +108,53 @@ def custom_loss(
 
 if __name__ == "__main__":
     learning_config = LearningConfig(
-        dt=torch.tensor(0.02),
-        num_epochs=10,
-        train_time=15.0,
-        learning_rate=0.01,
-    )
-    dt, num_epochs, train_steps, lr = (
-        learning_config.dt,
-        learning_config.num_epochs,
-        learning_config.train_steps,
-        learning_config.learning_rate,
+        dt=torch.tensor(config.learning.dt),
+        num_epochs=config.learning.lstm.num_epochs,
+        train_time=config.learning.lstm.train_time,
+        learning_rate=config.learning.lstm.optimizer.lr,
     )
 
-    mass, spring, friction = torch.tensor(1.0), torch.tensor(0.5), torch.tensor(0.1)
+    mass, spring, friction = (
+        torch.tensor(config.system["mass"]),
+        torch.tensor(config.system["spring"]),
+        torch.tensor(config.system["friction"]),
+    )
     initial_Kp, initial_Ki, initial_Kd = (
         torch.tensor(10.0),
         torch.tensor(0.1),
         torch.tensor(1.0),
     )
-    input_size, hidden_size, output_size = 5, 20, 3
-
-    trolley = Trolley(mass, spring, friction, dt)
+    trolley = Trolley(
+        mass=torch.tensor(config.system["mass"]),
+        spring=torch.tensor(config.system["spring"]),
+        friction=torch.tensor(config.system["friction"]),
+        dt=torch.tensor(config.learning.dt),
+    )
     pid = PID(initial_Kp, initial_Ki, initial_Kd)
     pid.set_limits(torch.tensor(50.0), torch.tensor(-50.0))
-    lstm_model = LSTMAdaptivePID(input_size, hidden_size, output_size)
+    lstm_model = LSTMAdaptivePID(
+        input_size=config.learning.lstm.model.input_size,
+        hidden_size=config.learning.lstm.model.hidden_size,
+        output_size=config.learning.lstm.model.output_size,
+    )
     optimizer = optim.SGD(
         lstm_model.parameters(),
-        lr=lr,
-        momentum=0.9,
+        lr=config.learning.lstm.optimizer.lr,
+        momentum=config.learning.lstm.optimizer.momentum,
     )
     scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
     rbf_model = save_load.load_rbf_model("sys_rbf_trolley.pth")
 
     print("Training phase:")
     dynamic_plot = DynamicPlot("Trolley")
-    for epoch in range(num_epochs):
-        print(f"Epoch {epoch + 1}/{num_epochs}")
+    for epoch in range(learning_config.num_epochs):
+        print(f"Epoch {epoch + 1}/{learning_config.num_epochs}")
         trolley.reset()
 
-        setpoints = [torch.randn(1) * 10] * train_steps
+        setpoints = [torch.randn(1) * 10] * learning_config.train_steps
         trainining_config = SimulationConfig(
             setpoints=setpoints,
-            dt=dt,
+            dt=learning_config.dt,
             sequence_length=(len(setpoints) - 1) // 1,
             sequence_step=10,
             pid_gain_factor=10,
@@ -162,7 +174,7 @@ if __name__ == "__main__":
 
         dynamic_plot.update_plot(
             train_results,
-            f"Train {epoch + 1}/{num_epochs}",
+            f"Train {epoch + 1}/{learning_config.num_epochs}",
             "train",
         )
 
@@ -174,7 +186,7 @@ if __name__ == "__main__":
     # Validation phase
     num_validation_epochs = 5
     validation_time = 15.0
-    validation_steps = int(validation_time / dt.item())
+    validation_steps = int(validation_time / learning_config.dt.item()) + 1
     print("\nValidation/Static phase")
     for epoch in range(num_validation_epochs):
         print(f"Validation/Static Epoch {epoch + 1}/{num_validation_epochs}")
@@ -184,9 +196,9 @@ if __name__ == "__main__":
         trolley.reset()
         validation_config = SimulationConfig(
             setpoints=setpoints_val,
-            dt=dt,
-            sequence_length=50,
-            pid_gain_factor=10,
+            dt=learning_config.dt,
+            sequence_length=config.learning.lstm.sequence_length,
+            pid_gain_factor=config.learning.lstm.pid_gain_factor,
         )
         validation_results = run_simulation(
             system=trolley,
