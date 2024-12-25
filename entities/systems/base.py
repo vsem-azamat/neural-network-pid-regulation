@@ -145,7 +145,7 @@ class BaseSystem(ABC):
         elif method == "cohen_coon":
             return self._tune_cohen_coon(K, L, T)
         elif method == "pid_imc":
-            lambda_value = kwargs.get("lambda_value", 1.0)
+            lambda_value = kwargs.get("lambda_value", L * 0.3)
             return self._tune_pid_imc(K, L, T, lambda_value)
         else:
             raise ValueError(f"Unknown tuning method: {method}")
@@ -243,7 +243,21 @@ class BaseSystem(ABC):
             - Ki is derived from Kp and the sum of T and L.
             - Kd is proportional to L and inversely proportional to the sum of T and L.
         """
-        Kp = T / (K * (L + lambda_value))
-        Ki = Kp / (T + L)
-        Kd = Kp * (L / (T + L))
+        if L == 0:
+            # Modified IMC tuning for first-order systems without delay
+            lambda_value = max(lambda_value, 0.1 * T)  # Ensure lambda isn't too small
+
+            Kp = T / (K * lambda_value)
+            Ki = Kp / T  # Integral time = T
+            Kd = 0.0  # No derivative action needed for first order system
+        else:
+            # Original IMC tuning for systems with delay
+            lambda_value = max(lambda_value, 0.8 * L)
+
+            Kp = (2 * T + L) / (2 * K * lambda_value)
+            Ti = T + L / 2
+            Td = (T * L) / (2 * T + L)
+
+            Ki = Kp / Ti
+            Kd = Kp * Td
         return Kp, Ki, Kd
