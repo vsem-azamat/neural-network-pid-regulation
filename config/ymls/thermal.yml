@@ -1,0 +1,33 @@
+learning:
+  dt: 0.1
+  lstm:
+    train_time: 200.0
+    num_epochs: 10
+    optimizer: 
+      lr: 0.01
+      momentum: 0.9
+    scheduler:
+      gamma: 0.9
+    
+    model:
+      input_size: 5
+      hidden_size: 20
+      output_size: 3
+  
+    sequence_length: 50
+    sequence_step: 10
+    pid_gain_factor: 10
+
+  rbf:
+    num_epochs: 1000
+    batch_size: 32
+    lr: 0.001
+    
+    model:
+      input_size: 3
+      hidden_size: 30
+      output_size: 1
+
+system:
+  thermal_capacity: 1000.0
+  heat_transfer_coefficient: 10.0

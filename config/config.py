@@ -18,5 +18,7 @@ class Config:
     METRICS_PLOTS: str = os.path.join(PLOTS_DIR, "metrics")
     os.makedirs(METRICS_PLOTS, exist_ok=True)
 
+    YMLS_DIR: str = "./config/ymls"
+
 
 cnfg = Config()
