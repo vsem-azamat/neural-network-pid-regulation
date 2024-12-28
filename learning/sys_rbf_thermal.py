@@ -67,7 +67,9 @@ if __name__ == "__main__":
     # Initialize the Thermal system
     thermal_system = Thermal(
         thermal_capacity=torch.tensor(config.system["thermal_capacity"]),
-        heat_transfer_coefficient=torch.tensor(config.system["heat_transfer_coefficient"]),
+        heat_transfer_coefficient=torch.tensor(
+            config.system["heat_transfer_coefficient"]
+        ),
         dt=torch.tensor(config.learning.dt),
     )
 
