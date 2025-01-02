@@ -11,7 +11,7 @@
 3. [Acknowledgements](#acknowledgements)
 
 ## Abstract
-#TODO
+This bachelor's thesis focuses on the use of neural networks for the automatic tuning of PID controllers. The main goal is to develop and implement a system combining LSTM and RBF networks for adaptive control. The work includes a theoretical analysis of the issue, the design of a custom solution, and its experimental verification on two types of systems – a cart and a thermal system. The results demonstrate that the proposed approach can, in some cases, outperform conventional PID controller tuning methods, particularly when working with nonlinear systems. Additionally, limitations and practical challenges of the implementation are discussed, including issues with numerical stability and computational complexity.
 
 ## Scripts
 Each script is located in a different folder. The scripts are divided into three main categories: `learning`, `comparisons`, and `simulations`.
