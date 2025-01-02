@@ -11,12 +11,12 @@ learning:
     
     model:
       input_size: 5
-      hidden_size: 20
+      hidden_size: 30
       output_size: 3
   
     sequence_length: 50
-    sequence_step: 10
-    pid_gain_factor: 10
+    sequence_step: 1
+    pid_gain_factor: 15
 
   rbf:
     num_epochs: 1000
