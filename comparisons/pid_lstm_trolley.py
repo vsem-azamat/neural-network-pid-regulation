@@ -45,29 +45,27 @@ if __name__ == "__main__":
     tuning_method = "pid_imc"
 
     compare_controllers_simulation(
-        trolley,
-        lstm_model,
-        pid,
-        dt,
+        system=trolley,
+        lstm_regulator=lstm_model,
+        pid=pid,
         steps=steps,
         warm_up_steps=int(1 / dt.item()),
         random_disturbance=True,
         session_name=session_name,
         setpoints_interval=setpoints_interval,
-        pid_gain_factor=config.learning.lstm.pid_gain_factor,
+        config=config,
         tuning_method=tuning_method,
     )
     compare_controllers_metrics(
         trolley,
         lstm_model,
         pid,
-        dt,
         steps=steps,
         warm_up_steps=int(1 / dt.item()),
-        runs=50,
+        runs=100,
         random_disturbance=True,
         session_name=session_name,
         setpoints_interval=setpoints_interval,
-        pid_gain_factor=config.learning.lstm.pid_gain_factor,
+        config=config,
         tuning_method=tuning_method,
     )
