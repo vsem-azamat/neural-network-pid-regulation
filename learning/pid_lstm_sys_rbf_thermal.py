@@ -13,51 +13,41 @@ from learning.utils import extract_rbf_input
 from classes.simulation import SimulationConfig, SimulationResults, LearningConfig
 
 
+config = load_config("thermal")
+
+
 def extract_lstm_input(
     simulation_config: SimulationConfig,
     results: SimulationResults,
 ) -> torch.Tensor:
-    input_array = torch.zeros(5, simulation_config.sequence_length)
-
-    # Populate input array with historical data
-    position_history_len = min(
-        simulation_config.sequence_length, len(results.positions)
-    )
-    setpoint_history_len = min(
-        simulation_config.sequence_length, len(results.setpoints)
-    )
-    kp_values_len = min(simulation_config.sequence_length, len(results.kp_values))
-    ki_values_len = min(simulation_config.sequence_length, len(results.ki_values))
-    kd_values_len = min(simulation_config.sequence_length, len(results.kd_values))
-
-    # Paste last values
-    input_array[0, -position_history_len:] = torch.tensor(
-        results.positions[-position_history_len:]
-        if results.positions
-        else [0.0] * simulation_config.sequence_length
-    )
-    input_array[1, -setpoint_history_len:] = torch.tensor(
-        results.setpoints[-setpoint_history_len:]
-        if results.setpoints
-        else [0.0] * simulation_config.sequence_length
-    )
-    input_array[1, -kp_values_len:] = torch.tensor(
-        results.kp_values[-kp_values_len:]
-        if results.kp_values
-        else [0.0] * simulation_config.sequence_length
-    )
-    input_array[2, -ki_values_len:] = torch.tensor(
-        results.ki_values[-ki_values_len:]
-        if results.ki_values
-        else [0.0] * simulation_config.sequence_length
-    )
-    input_array[3, -kd_values_len:] = torch.tensor(
-        results.kd_values[-kd_values_len:]
-        if results.kd_values
-        else [0.0] * simulation_config.sequence_length
+    input_array = torch.zeros(
+        config.learning.lstm.model.input_size,
+        simulation_config.sequence_length,
     )
 
-    # Prepare LSTM input
+    step = 1
+    filter_ = lambda x: x[::-1][::step][::-1]
+    array_positions = torch.tensor(filter_(results.positions))
+    array_setpoints = torch.tensor(filter_(results.setpoints))
+    array_kp_values = torch.tensor(filter_(results.kp_values))
+    array_ki_values = torch.tensor(filter_(results.ki_values))
+    array_kd_values = torch.tensor(filter_(results.kd_values))
+
+    common_len = min(
+        simulation_config.sequence_length,
+        len(array_positions),
+        len(array_setpoints),
+        len(array_kp_values),
+        len(array_ki_values),
+        len(array_kd_values),
+    )
+    if common_len:
+        input_array[0, -common_len:] = array_positions[-common_len::]
+        input_array[1, -common_len:] = array_setpoints[-common_len::]
+        input_array[2, -common_len:] = array_kp_values[-common_len::]
+        input_array[3, -common_len:] = array_ki_values[-common_len::]
+        input_array[4, -common_len:] = array_kd_values[-common_len::]
+
     lstm_input = input_array.transpose(0, 1).unsqueeze(0)
     return lstm_input
 
@@ -84,8 +74,6 @@ def custom_loss(
     return loss
 
 
-config = load_config("thermal")
-
 if __name__ == "__main__":
     learning_config = LearningConfig(
         dt=torch.tensor(config.learning.dt),
@@ -93,51 +81,49 @@ if __name__ == "__main__":
         train_time=config.learning.lstm.train_time,
         learning_rate=config.learning.lstm.optimizer.lr,
     )
-    dt, num_epochs, train_steps, lr = (
-        learning_config.dt,
-        learning_config.num_epochs,
-        learning_config.train_steps,
-        learning_config.learning_rate,
-    )
 
     thermal_capacity = torch.tensor(config.system["thermal_capacity"])  # J/K
-    heat_transfer_coefficient = torch.tensor(config.system["heat_transfer_coefficient"])  # W/K
+    heat_transfer_coefficient = torch.tensor(
+        config.system["heat_transfer_coefficient"]
+    )  # W/K
     initial_Kp, initial_Ki, initial_Kd = (
         torch.tensor(100.0),
         torch.tensor(1.0),
         torch.tensor(10.0),
     )
-    input_size, hidden_size, output_size = (
-        config.learning.lstm.model.input_size,
-        config.learning.lstm.model.hidden_size,
-        config.learning.lstm.model.output_size,
-    )
-
-    thermal = Thermal(thermal_capacity, heat_transfer_coefficient, dt)
+    thermal = Thermal(thermal_capacity, heat_transfer_coefficient, learning_config.dt)
     pid = PID(initial_Kp, initial_Ki, initial_Kd)
     pid.set_limits(
         torch.tensor(100000), torch.tensor(0.0)
     )  # Heat input can't be negative. [W]
-    lstm_model = LSTMAdaptivePID(input_size, hidden_size, output_size)
+    lstm_model = LSTMAdaptivePID(
+        input_size=config.learning.lstm.model.input_size,
+        hidden_size=config.learning.lstm.model.hidden_size,
+        output_size=config.learning.lstm.model.output_size,
+    )
     optimizer = optim.SGD(
         lstm_model.parameters(),
-        lr=lr,
+        lr=config.learning.lstm.optimizer.lr,
+        momentum=config.learning.lstm.optimizer.momentum,
     )
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=5, gamma=0.5)
+    scheduler = optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.9)
     rbf_model = save_load.load_rbf_model("sys_rbf_thermal.pth")
 
     print("Training phase:")
     dynamic_plot = DynamicPlot("Thermal")
-    for epoch in range(num_epochs):
-        print(f"Epoch {epoch + 1}/{num_epochs}")
+    for epoch in range(learning_config.num_epochs):
+        print(f"Epoch {epoch + 1}/{learning_config.num_epochs}")
         thermal.reset()
 
-        setpoints = [torch.rand(1) * 293.15 + 300] * train_steps  # [300, 593.15] K
+        setpoints = [
+            torch.rand(1) * 293.15 + 300
+        ] * learning_config.train_steps  # [300, 593.15] K
         training_config = SimulationConfig(
             setpoints=setpoints,
-            dt=dt,
-            sequence_length=(len(setpoints) - 1) // 1,
-            sequence_step=10,
+            dt=learning_config.dt,
+            sequence_length=config.learning.lstm.sequence_length,
+            sequence_step=config.learning.lstm.sequence_step,
+            pid_gain_factor=config.learning.lstm.pid_gain_factor,
         )
         train_results = run_simulation(
             system=thermal,
@@ -153,7 +139,7 @@ if __name__ == "__main__":
         )
         dynamic_plot.update_plot(
             train_results,
-            f"Train {epoch + 1}/{num_epochs}",
+            f"Train {epoch + 1}/{learning_config.num_epochs}",
             "train",
         )
 
@@ -166,7 +152,7 @@ if __name__ == "__main__":
     # Validation phase
     num_validation_epochs = 1
     validation_time = 300
-    validation_steps = int(validation_time / dt.item())
+    validation_steps = int(validation_time / learning_config.dt.item())
     print("Validation phase:")
     for epoch in range(num_validation_epochs):
         print(f"Validation Epoch {epoch + 1}/{num_validation_epochs}")
@@ -179,9 +165,10 @@ if __name__ == "__main__":
         pid.update_gains(initial_Kp, initial_Ki, initial_Kd)
         validation_config = SimulationConfig(
             setpoints=setpoints_val,
-            sequence_length=(len(setpoints_val) - 1) // 20,
-            sequence_step=10,
-            dt=dt,
+            sequence_length=config.learning.lstm.sequence_length,
+            sequence_step=config.learning.lstm.sequence_step,
+            dt=learning_config.dt,
+            pid_gain_factor=config.learning.lstm.pid_gain_factor,
         )
         validation_results = run_simulation(
             system=thermal,
@@ -190,7 +177,7 @@ if __name__ == "__main__":
             rbf_model=rbf_model,
             simulation_config=validation_config,
             session="validation",
-            extract_rbf_input=extract_rbf_input,
+            extract_rbf_input=extract_rbf_input.thermal,
             extract_lstm_input=extract_lstm_input,
         )
         dynamic_plot.update_plot(
@@ -212,7 +199,7 @@ if __name__ == "__main__":
             rbf_model=rbf_model,
             simulation_config=validation_config,
             session="static",
-            extract_rbf_input=extract_rbf_input,
+            extract_rbf_input=extract_rbf_input.thermal,
             extract_lstm_input=extract_lstm_input,
         )
         dynamic_plot.update_plot(

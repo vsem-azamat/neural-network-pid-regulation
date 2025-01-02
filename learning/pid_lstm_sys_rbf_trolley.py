@@ -25,44 +25,28 @@ def extract_lstm_input(
         simulation_config.sequence_length,
     )
 
-    # Populate input array with historical data
-    position_history_len = min(
-        simulation_config.sequence_length, len(results.positions)
-    )
-    setpoint_history_len = min(
-        simulation_config.sequence_length, len(results.setpoints)
-    )
+    step = 1
+    filter_ = lambda x: x[::-1][::step][::-1]
+    array_positions = torch.tensor(filter_(results.positions))
+    array_setpoints = torch.tensor(filter_(results.setpoints))
+    array_kp_values = torch.tensor(filter_(results.kp_values))
+    array_ki_values = torch.tensor(filter_(results.ki_values))
+    array_kd_values = torch.tensor(filter_(results.kd_values))
 
-    kp_values_len = min(simulation_config.sequence_length, len(results.kp_values))
-    ki_values_len = min(simulation_config.sequence_length, len(results.ki_values))
-    kd_values_len = min(simulation_config.sequence_length, len(results.kd_values))
-
-    # Paste last values
-    input_array[0, -position_history_len:] = torch.tensor(
-        results.positions[-position_history_len:]
-        if results.positions
-        else [0.0] * simulation_config.sequence_length
+    common_len = min(
+        simulation_config.sequence_length,
+        len(array_positions),
+        len(array_setpoints),
+        len(array_kp_values),
+        len(array_ki_values),
+        len(array_kd_values),
     )
-    input_array[1, -setpoint_history_len:] = torch.tensor(
-        results.setpoints[-setpoint_history_len:]
-        if results.setpoints
-        else [0.0] * simulation_config.sequence_length
-    )
-    input_array[1, -kp_values_len:] = torch.tensor(
-        results.kp_values[-kp_values_len:]
-        if results.kp_values
-        else [0.0] * simulation_config.sequence_length
-    )
-    input_array[2, -ki_values_len:] = torch.tensor(
-        results.ki_values[-ki_values_len:]
-        if results.ki_values
-        else [0.0] * simulation_config.sequence_length
-    )
-    input_array[3, -kd_values_len:] = torch.tensor(
-        results.kd_values[-kd_values_len:]
-        if results.kd_values
-        else [0.0] * simulation_config.sequence_length
-    )
+    if common_len:
+        input_array[0, -common_len:] = array_positions[-common_len::]
+        input_array[1, -common_len:] = array_setpoints[-common_len::]
+        input_array[2, -common_len:] = array_kp_values[-common_len::]
+        input_array[3, -common_len:] = array_ki_values[-common_len::]
+        input_array[4, -common_len:] = array_kd_values[-common_len::]
 
     # Prepare LSTM input
     lstm_input = input_array.transpose(0, 1).unsqueeze(0)
@@ -76,11 +60,13 @@ def custom_loss(
     right_slice = step
 
     # Slices
-    positions = results.rbf_predictions[left_slice : right_slice : config.sequence_step]
-    setpoints = results.setpoints[left_slice : right_slice : config.sequence_step]
-    kp_values = results.kp_values[left_slice : right_slice : config.sequence_step]
-    ki_values = results.ki_values[left_slice : right_slice : config.sequence_step]
-    kd_values = results.kd_values[left_slice : right_slice : config.sequence_step]
+    # filter_ = lambda x: x[::-1][::config.sequence_step][::-1][left_slice:right_slice]
+    filter_ = lambda x: x[left_slice:right_slice]
+    positions = filter_(results.rbf_predictions)
+    setpoints = filter_(results.setpoints)
+    kp_values = filter_(results.kp_values)
+    ki_values = filter_(results.ki_values)
+    kd_values = filter_(results.kd_values)
 
     # Tensors
     positions_tensor = torch.stack(positions)
@@ -155,9 +141,9 @@ if __name__ == "__main__":
         trainining_config = SimulationConfig(
             setpoints=setpoints,
             dt=learning_config.dt,
-            sequence_length=(len(setpoints) - 1) // 1,
-            sequence_step=10,
-            pid_gain_factor=10,
+            sequence_length=config.learning.lstm.sequence_length,
+            sequence_step=config.learning.lstm.sequence_step,
+            pid_gain_factor=config.learning.lstm.pid_gain_factor,
         )
         train_results = run_simulation(
             system=trolley,
@@ -198,6 +184,7 @@ if __name__ == "__main__":
             setpoints=setpoints_val,
             dt=learning_config.dt,
             sequence_length=config.learning.lstm.sequence_length,
+            sequence_step=config.learning.lstm.sequence_step,
             pid_gain_factor=config.learning.lstm.pid_gain_factor,
         )
         validation_results = run_simulation(
