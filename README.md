@@ -1,17 +1,35 @@
-# Adaptive PID Regulation by Neural Networks
-
-**⚠️ This project is still in development ⚠️**
+# Adaptive PID Regulation by Neural Networks (Bachelor's Thesis)
+Implementation of an adaptive PID controller using neural networks, combining LSTM for parameter tuning and RBF for system dynamics approximation. This project explores the potential of machine learning in control systems, specifically focusing on improving PID controller performance through automated parameter adjustment.
 
 ## Contents
 1. [Abstract](#abstract)
-2. [Scripts](#scripts)
+2. [Setup](#setup)
+3. [Scripts](#scripts)
     * [Learning](#learning)
     * [Comparisons](#comparisons)
     * [Simulations](#simulations)
-3. [Acknowledgements](#acknowledgements)
+4. [Acknowledgements](#acknowledgements)
 
 ## Abstract
 This bachelor's thesis focuses on the use of neural networks for the automatic tuning of PID controllers. The main goal is to develop and implement a system combining LSTM and RBF networks for adaptive control. The work includes a theoretical analysis of the issue, the design of a custom solution, and its experimental verification on two types of systems – a cart and a thermal system. The results demonstrate that the proposed approach can, in some cases, outperform conventional PID controller tuning methods, particularly when working with nonlinear systems. Additionally, limitations and practical challenges of the implementation are discussed, including issues with numerical stability and computational complexity.
+
+## Setup
+1. Clone the repository
+```sh
+https://github.com/vsem-azamat/neural-network-pid-regulation
+```
+
+2. Dependencies
+
+Use virtual environment to avoid conflicts with other projects
+```sh
+python3 -m venv venv
+source venv/bin/activate
+```
+Install the required packages
+```sh
+pip install -r requirements.txt
+```
 
 ## Scripts
 Each script is located in a different folder. The scripts are divided into three main categories: `learning`, `comparisons`, and `simulations`.
