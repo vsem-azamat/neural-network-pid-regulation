@@ -16,6 +16,10 @@ class LSTMAdaptivePID(nn.Module):
     very different magnitudes a real controller needs.
     """
 
+    #: Keeps a warm start off the flat ends of the sigmoid, where the head
+    #: would receive almost no gradient and never recover.
+    MIN_INITIAL_FRACTION = 0.05
+
     def __init__(
         self,
         input_size: int,
@@ -23,6 +27,7 @@ class LSTMAdaptivePID(nn.Module):
         output_size: int = 3,
         num_layers: int = 1,
         dropout: float = 0.0,
+        initial_gain_fraction: tuple[float, float, float] | None = None,
     ) -> None:
         super().__init__()
         self.lstm = nn.LSTM(
@@ -34,10 +39,41 @@ class LSTMAdaptivePID(nn.Module):
         )
         self.linear = nn.Linear(hidden_size, output_size)
 
-        # Start near the middle of the allowed range: gains begin at half their
-        # maximum instead of at an arbitrary corner of the output space.
-        nn.init.zeros_(self.linear.bias)
-        nn.init.xavier_uniform_(self.linear.weight, gain=0.5)
+        # Small output weights so the network starts close to its bias, i.e. at
+        # a definite, chosen controller rather than a random one.
+        nn.init.xavier_uniform_(self.linear.weight, gain=0.1)
+        self.set_initial_gains(initial_gain_fraction)
+
+    def set_initial_gains(
+        self, fraction: tuple[float, float, float] | None
+    ) -> None:
+        """Bias the head so the untrained network emits these gain fractions.
+
+        Warm-starting at the classical tuning means training begins from a
+        controller that already works and can only be judged by whether it
+        improves on it. Starting from an arbitrary point instead makes the first
+        several episodes a search for basic competence, and leaves the final
+        comparison unable to separate "the scheduler learned something" from
+        "the scheduler found its way back to roughly the classical gains".
+
+        The requested fraction is clamped away from the ends of the range, not
+        just away from 0 and 1. A sigmoid at 0.001 has a derivative of about
+        1e-3, so a head warm-started there is effectively frozen: asking for
+        Kd = 0 on the first-order thermal plant drove that output to a gradient
+        norm of 2e-06 and it never moved again.
+
+        Args:
+            fraction: Desired ``gain / ceiling`` for each of Kp, Ki, Kd, in
+                (0, 1). None leaves the head at the middle of its range.
+        """
+        if fraction is None:
+            nn.init.zeros_(self.linear.bias)
+            return
+        target = torch.tensor(fraction, dtype=torch.float32).clamp(
+            self.MIN_INITIAL_FRACTION, 1.0 - self.MIN_INITIAL_FRACTION
+        )
+        with torch.no_grad():
+            self.linear.bias.copy_(torch.log(target / (1 - target)))  # logit
 
     def forward(
         self, x: Tensor, hidden: tuple[Tensor, Tensor] | None = None

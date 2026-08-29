@@ -93,6 +93,13 @@ class LSTMConfig(BaseModel):
     warm_up_steps: int
     grad_clip: float | None = 1.0
     loss_target: Literal["plant", "surrogate"] = "plant"
+    overshoot_weight: float = 0.5
+    effort_weight: float = Field(
+        0.0,
+        description="Penalty on control-signal movement. A scheduler that wins "
+        "on tracking purely by working the actuator harder is not a clean win, "
+        "so the trade-off is made explicit rather than left implicit.",
+    )
     optimizer: OptimizerConfig
     scheduler: SchedulerConfig = SchedulerConfig()
     model: LSTMModelConfig

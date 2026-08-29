@@ -14,6 +14,8 @@ learning:
     warm_up_steps: 20
     grad_clip: 1.0
     loss_target: plant
+    overshoot_weight: 0.5
+    effort_weight: 0.05
     optimizer:
       name: adam
       lr: 0.003
@@ -40,7 +42,7 @@ control:
   output_max: 4000.0
   # IMC tuning for the nominal plant (see utils/tuning.py).
   initial_gains: [105.2, 0.56, 0.0]
-  gain_ceiling: [200.0, 10.0, 100.0]
+  gain_ceiling: [300.0, 4.0, 20.0]
   error_scale: 30.0
   tuning_step_input: 1000.0
 
@@ -53,7 +55,8 @@ scenario:
   segment_time:
     low: 80.0
     high: 200.0
-  disturbance_scale: 150.0
+  # ~15% of the actuator range.
+  disturbance_scale: 600.0
   disturbance_hold: 40.0
   randomize_plant:
     thermal_capacity:          {low: 700.0, high: 1600.0}
