@@ -6,12 +6,17 @@ identifies the plant properly instead of forcing one model onto every system:
 * :func:`identify_fopdt` fits a first-order-plus-dead-time model from an
   open-loop step test.  It is the right model for the thermal plant.
 * :func:`relay_autotune` runs an Åström–Hägglund relay experiment to measure the
-  ultimate gain and period directly.  It is the right method for the trolley,
-  whose step response is oscillatory — the two-point fit reads its first
-  overshoot as if it were a monotone approach and returns nonsense.
+  ultimate gain and period directly, for plants that have a finite one.
+* :func:`pole_placement` solves for the gains from the plant's own structure.
+  It is the right method for the trolley: the two-point fit reads its first
+  overshoot as if it were a monotone approach, and the relay method does not
+  apply either, because a relative-degree-two plant with no dead time never
+  reaches −180° of phase and so has no finite ultimate gain at all — a relay run
+  on it locks onto a chattering cycle at the sample rate and reports an
+  "ultimate gain" of several hundred, which is an artefact of the sampling.
 
 :func:`tune` picks between them, so callers ask for a method and get a baseline
-that is actually valid for their plant.
+that is actually valid for their plant. ``method="auto"`` is the one to use.
 """
 
 from dataclasses import dataclass
@@ -22,7 +27,7 @@ import torch
 from entities.systems import BaseSystem
 
 TuningMethod = Literal[
-    "ziegler_nichols", "cohen_coon", "pid_imc", "relay", "auto"
+    "ziegler_nichols", "cohen_coon", "pid_imc", "relay", "pole_placement", "auto"
 ]
 
 Gains = tuple[float, float, float]
@@ -215,6 +220,61 @@ def ziegler_nichols_ultimate(ultimate_gain: float, ultimate_period: float) -> Ga
     return Kp, Kp / Ti, Kp * Td
 
 
+def pole_placement(system: BaseSystem, bandwidth_factor: float = 2.0,
+                   damping: float = 0.8) -> Gains:
+    """Place the closed-loop poles analytically from the plant's own parameters.
+
+    Neither step-response identification nor a relay experiment is meaningful for
+    the trolley: it has relative degree two and no dead time, so its phase never
+    reaches −180° and there *is* no finite ultimate gain. A relay run on it locks
+    onto a chattering cycle at the sampling limit and reports an ultimate gain
+    that is an artefact of the sample rate, not a property of the plant.
+
+    Since both plants here have known structure, the honest baseline is to solve
+    for the gains directly.
+
+    Trolley — m·s³ + (c + Kd)·s² + (k + Kp)·s + Ki, matched against
+    (s + ω)(s² + 2ζω·s + ω²):
+
+        Kd = m(1 + 2ζ)ω − c,  Kp = m(1 + 2ζ)ω² − k,  Ki = m·ω³
+
+    Thermal — C·s² + (h + Kp)·s + Ki, matched against C(s² + 2ζω·s + ω²):
+
+        Kp = 2ζωC − h,  Ki = C·ω²,  Kd = 0
+
+    Args:
+        bandwidth_factor: Closed-loop bandwidth as a multiple of the plant's own
+            characteristic frequency. Higher is faster and hits the actuator
+            limits sooner.
+        damping: Target damping ratio ζ of the dominant pole pair.
+    """
+    from entities.systems import Thermal, Trolley
+
+    if isinstance(system, Trolley):
+        m = float(system.mass)
+        k = float(system.spring)
+        c = float(system.friction)
+        omega_n = (k / m) ** 0.5
+        omega = bandwidth_factor * max(omega_n, 1e-6)
+        Kd = m * (1.0 + 2.0 * damping) * omega - c
+        Kp = m * (1.0 + 2.0 * damping) * omega**2 - k
+        Ki = m * omega**3
+        return max(Kp, 0.0), max(Ki, 0.0), max(Kd, 0.0)
+
+    if isinstance(system, Thermal):
+        C = float(system.thermal_capacity)
+        h = float(system.heat_transfer_coefficient)
+        omega = bandwidth_factor / float(system.tau)
+        Kp = 2.0 * damping * omega * C - h
+        Ki = C * omega**2
+        return max(Kp, 0.0), max(Ki, 0.0), 0.0
+
+    raise IdentificationError(
+        f"No pole-placement design for {type(system).__name__}; its structure "
+        "is not known to this module."
+    )
+
+
 # ── entry point ──────────────────────────────────────────────────────────
 def tune(
     system: BaseSystem,
@@ -226,11 +286,14 @@ def tune(
 ) -> Gains:
     """Tune a PID for ``system``.
 
-    ``method="auto"`` identifies the plant first and falls back to the relay
-    experiment when the step response turns out to be oscillatory — which is
-    what makes the baseline fair across both plants in this project.
+    ``method="auto"`` identifies the plant first and falls back to analytic pole
+    placement when the step response turns out to be oscillatory — which is what
+    makes the baseline fair across both plants in this project.
     """
     amplitude = relay_amplitude if relay_amplitude is not None else abs(step_input)
+
+    if method == "pole_placement":
+        return pole_placement(system)
 
     if method == "relay":
         Ku, Tu = relay_autotune(system, amplitude, steps)
@@ -241,8 +304,10 @@ def tune(
     except IdentificationError:
         if method != "auto":
             raise
-        Ku, Tu = relay_autotune(system, amplitude, steps)
-        return ziegler_nichols_ultimate(Ku, Tu)
+        # The step test could not identify the plant — which for a plant with
+        # no dead time also rules out the relay method. Fall back to solving
+        # for the gains from the plant's structure.
+        return pole_placement(system)
 
     if method in ("pid_imc", "auto"):
         return pid_imc(model, lambda_value)

@@ -13,6 +13,15 @@ Two properties matter for the rest of the project and are easy to lose:
    accumulating is textbook integral windup: the plant sits against its limit
    while the controller's internal state runs away, and the output stays stuck
    long after the error has changed sign.
+
+3. **The derivative acts on the measurement, not the error.**  A step change in
+   the reference is a discontinuity in the error, and differentiating it gives a
+   spike of size ``Kd·Δr/dt`` — with Kd=1 and dt=0.05 s, a 10-unit setpoint
+   change asks for 200 units of control on a single sample.  The actuator
+   saturates, the plant lurches, and the response spends the next several
+   seconds recovering.  Since ``e = r − y``, differentiating ``−y`` instead is
+   identical whenever the reference is constant, and simply ignores the step.
+   Pass ``measurement`` to :meth:`PID.compute` to enable it.
 """
 
 from typing import Literal, Optional
@@ -47,6 +56,11 @@ class PID:
         self.integral = torch.tensor(0.0)
         self.prev_error = torch.tensor(0.0)
 
+        # Measurement history, for derivative-on-measurement.
+        self._y_k: Tensor | None = None
+        self.y_k_1: Tensor | None = None
+        self.y_k_2: Tensor | None = None
+
         self.saturation_max: Optional[Tensor] = None
         self.saturation_min: Optional[Tensor] = None
 
@@ -74,7 +88,24 @@ class PID:
         self.saturation_min = torch.as_tensor(min_limit)
 
     # ── computation ──────────────────────────────────────────────────────
-    def compute(self, error: Tensor, dt: Tensor, method: Method = "standard") -> Tensor:
+    def compute(
+        self,
+        error: Tensor,
+        dt: Tensor,
+        method: Method = "standard",
+        measurement: Tensor | None = None,
+    ) -> Tensor:
+        """Compute one control output.
+
+        Args:
+            error: Setpoint minus measurement.
+            dt: Sample interval.
+            method: Discretisation of the integral and derivative terms.
+            measurement: Current plant output. When supplied, the derivative
+                term acts on it instead of on the error, which removes the
+                derivative kick on reference changes.
+        """
+        self._push_measurement(measurement)
         match method:
             case "standard":
                 return self.compute_standard(error, dt)
@@ -92,6 +123,28 @@ class PID:
                     "backward_euler, trapezoidal, forward_euler, bilinear_transform"
                 )
 
+    def _push_measurement(self, measurement: Tensor | None) -> None:
+        if measurement is None:
+            self.y_k_2 = self.y_k_1 = None
+            return
+        self.y_k_2 = self.y_k_1
+        self.y_k_1 = self._y_k
+        self._y_k = measurement.reshape(-1)[0]
+
+    def _derivative_second_difference(self, dt: Tensor) -> Tensor:
+        """Second difference of the derivative signal, for the incremental form."""
+        if self._y_k is not None and self.y_k_2 is not None:
+            # d/dt of (-y): e = r - y, so this matches the error-based term
+            # whenever the reference is constant, and ignores its steps.
+            return -(self._y_k - 2.0 * self.y_k_1 + self.y_k_2) / dt
+        return ((self.e_k - self.e_k_1) - (self.e_k_1 - self.e_k_2)) / dt
+
+    def _derivative_first_difference(self, error: Tensor, dt: Tensor) -> Tensor:
+        """First difference of the derivative signal, for the positional forms."""
+        if self._y_k is not None and self.y_k_1 is not None:
+            return -(self._y_k - self.y_k_1) / dt
+        return (error - self.prev_error) / dt
+
     def _saturate(self, u_k: Tensor) -> Tensor:
         if self.saturation_max is None or self.saturation_min is None:
             return u_k
@@ -107,7 +160,7 @@ class PID:
             self.u_k_1
             + self.Kp * (self.e_k - self.e_k_1)
             + self.Ki * self.e_k * dt
-            + self.Kd * ((self.e_k - self.e_k_1) - (self.e_k_1 - self.e_k_2)) / dt
+            + self.Kd * self._derivative_second_difference(dt)
         )
 
         # Store the *saturated* output: in the incremental form u_{k-1} is the
@@ -118,7 +171,7 @@ class PID:
 
     def _positional(self, error: Tensor, integral: Tensor, dt: Tensor) -> Tensor:
         """Shared tail of the positional forms, with conditional integration."""
-        derivative = (error - self.prev_error) / dt
+        derivative = self._derivative_first_difference(error, dt)
         u_unclamped = self.Kp * error + self.Ki * integral + self.Kd * derivative
         u_k = self._saturate(u_unclamped)
 
@@ -163,6 +216,10 @@ class PID:
         self.u_k_1 = self.u_k_1.detach()
         self.integral = self.integral.detach()
         self.prev_error = self.prev_error.detach()
+        for name in ("_y_k", "y_k_1", "y_k_2"):
+            value = getattr(self, name, None)
+            if isinstance(value, Tensor):
+                setattr(self, name, value.detach())
 
     def reset(self) -> None:
         self.integral = torch.tensor(0.0)
@@ -171,3 +228,6 @@ class PID:
         self.e_k_1 = torch.tensor(0.0)
         self.e_k_2 = torch.tensor(0.0)
         self.u_k_1 = torch.tensor(0.0)
+        self._y_k = None
+        self.y_k_1 = None
+        self.y_k_2 = None

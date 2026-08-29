@@ -147,4 +147,7 @@ class SimulationResults(Generic[T]):
 
     def as_floats(self, name: str) -> List[float]:
         """One field as plain Python floats, for metrics and plotting."""
-        return [float(v) for v in getattr(self, name)]
+        return [
+            float(v.detach()) if isinstance(v, torch.Tensor) else float(v)
+            for v in getattr(self, name)
+        ]

@@ -190,7 +190,7 @@ def run_episode(
 
             # ── control law ──────────────────────────────────────────────
             error = setpoint - system.X
-            control_output = pid.compute(error, dt)
+            control_output = pid.compute(error, dt, measurement=system.X)
 
             # ── surrogate prediction of the *next* output ────────────────
             rbf_prediction = rbf_model(extract_rbf_input(system, control_output))
@@ -327,14 +327,14 @@ def train_rbf_model(
             if gradient_clip_value is not None:
                 nn.utils.clip_grad_norm_(model.parameters(), gradient_clip_value)
             opt.step()
-            epoch_losses.append(float(loss))
+            epoch_losses.append(float(loss.detach()))
 
         history["train"].append(sum(epoch_losses) / len(epoch_losses))
 
         model.eval()
         with torch.no_grad():
             history["val"].append(
-                float(criterion(model(X_val), y_val)) if n_val else float("nan")
+                float(criterion(model(X_val), y_val).detach()) if n_val else float("nan")
             )
 
         if verbose and (epoch + 1) % max(1, num_epochs // 10) == 0:

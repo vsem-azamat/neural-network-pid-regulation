@@ -1,34 +1,65 @@
+# Mass-spring-damper trolley: second-order, oscillatory.
+#
+# dt is chosen against Trolley.min_dt(): omega_n = sqrt(k/m) = 1 rad/s for the
+# nominal plant, so the Nyquist-with-oversampling bound is pi/10 ~ 0.31 s. The
+# randomised range reaches k/m = 4 (omega_n = 2), which halves that bound, so
+# 0.05 s leaves headroom across the whole randomisation range.
 learning:
-  dt: 0.1
+  dt: 0.05
+
   lstm:
-    train_time: 15.
-    num_epochs: 10
-    optimizer: 
-      lr: 0.001
-      momentum: 0.9
+    train_time: 40.0
+    num_epochs: 60
+    sequence_length: 40
+    tbptt_window: 20
+    warm_up_steps: 20
+    grad_clip: 1.0
+    loss_target: plant
+    optimizer:
+      name: adam
+      lr: 0.003
     scheduler:
-      gamma: 0.9
-    
+      gamma: 0.97
     model:
-      input_size: 5
-      hidden_size: 30
-      output_size: 3
-  
-    sequence_length: 50
-    sequence_step: 1
-    pid_gain_factor: 15
+      hidden_size: 48
+      num_layers: 1
 
   rbf:
-    num_epochs: 1000
-    batch_size: 64
-    lr: 0.001
-    
+    num_epochs: 400
+    batch_size: 128
+    lr: 0.005
+    num_trajectories: 300
+    trajectory_steps: 120
+    validation_split: 0.2
     model:
-      input_size: 4
-      hidden_size: 20
-      output_size: 1
+      hidden_size: 60
+
+control:
+  output_min: -50.0
+  output_max: 50.0
+  # Pole placement at 2x the natural frequency, zeta = 0.8 (see utils/tuning.py).
+  initial_gains: [9.4, 8.0, 4.7]
+  # Ceilings the LSTM's (0,1) output is scaled by. Kp, Ki and Kd need very
+  # different ranges; a single shared factor forced them into the same one.
+  gain_ceiling: [30.0, 4.0, 12.0]
+  error_scale: 10.0
+  tuning_step_input: 10.0
+
+scenario:
+  setpoint:
+    low: -15.0
+    high: 15.0
+  segment_time:
+    low: 4.0
+    high: 10.0
+  disturbance_scale: 2.0
+  disturbance_hold: 2.0
+  randomize_plant:
+    mass:     {low: 0.7, high: 1.6}
+    spring:   {low: 0.6, high: 2.5}
+    friction: {low: 0.2, high: 1.2}
 
 system:
   mass: 1.0
   spring: 1.0
-  friction: 0.1
+  friction: 0.5
