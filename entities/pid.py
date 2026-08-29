@@ -24,7 +24,7 @@ Two properties matter for the rest of the project and are easy to lose:
    Pass ``measurement`` to :meth:`PID.compute` to enable it.
 """
 
-from typing import Literal, Optional
+from typing import Literal
 
 import torch
 from torch import Tensor
@@ -61,8 +61,8 @@ class PID:
         self.y_k_1: Tensor | None = None
         self.y_k_2: Tensor | None = None
 
-        self.saturation_max: Optional[Tensor] = None
-        self.saturation_min: Optional[Tensor] = None
+        self.saturation_max: Tensor | None = None
+        self.saturation_min: Tensor | None = None
 
     # ── gain access ──────────────────────────────────────────────────────
     @property

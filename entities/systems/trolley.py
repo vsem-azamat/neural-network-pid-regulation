@@ -32,8 +32,10 @@ class Trolley(BaseSystem):
         self.velocity = torch.tensor(0.0)
         self.acceleration = torch.tensor(0.0)
 
-    def apply_control(self, control_output: Tensor, disturbance: Tensor = ZERO) -> Tensor:
-        """Advance one step under force ``control_output`` plus ``disturbance`` (N)."""
+    def apply_control(
+        self, control_output: Tensor, disturbance: Tensor = ZERO
+    ) -> Tensor:
+        """Advance one step under force plus ``disturbance``, both in newtons."""
         force = control_output + disturbance
         self.acceleration = (
             force - self.friction * self.velocity - self.spring * self.position

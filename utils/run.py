@@ -16,8 +16,9 @@ at every step.
 never silently regress again.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Callable, Literal, Optional
+from typing import Literal
 
 import torch
 from torch import nn, optim
@@ -96,9 +97,8 @@ def tracking_loss(
     """
     source = results.rbf_predictions if target == "surrogate" else results.positions
     predicted = torch.stack(source[window_start:window_end])
-    reference = torch.stack(
-        [torch.as_tensor(s).reshape(-1)[0] for s in results.setpoints[window_start:window_end]]
-    )
+    window = results.setpoints[window_start:window_end]
+    reference = torch.stack([torch.as_tensor(s).reshape(-1)[0] for s in window])
 
     error = (predicted - reference) / max(abs(config.error_scale), 1e-6)
 
@@ -139,10 +139,10 @@ def run_episode(
     extract_rbf_input: RbfExtractor,
     extract_lstm_input: LstmExtractor,
     rbf_model: nn.Module,
-    lstm_model: Optional[nn.Module] = None,
+    lstm_model: nn.Module | None = None,
     loss_function: LossFn = tracking_loss,
     session: Session = "train",
-    optimizer: Optional[Optimizer] = None,
+    optimizer: Optimizer | None = None,
     grad_clip: float | None = 1.0,
     verbose: bool = False,
 ) -> EpisodeReport:
@@ -269,7 +269,7 @@ def run_simulation(
     extract_rbf_input: RbfExtractor,
     extract_lstm_input: LstmExtractor,
     rbf_model: nn.Module,
-    lstm_model: Optional[nn.Module] = None,
+    lstm_model: nn.Module | None = None,
     **kwargs,
 ) -> SimulationResults:
     """Backwards-compatible wrapper returning only the trajectory."""
