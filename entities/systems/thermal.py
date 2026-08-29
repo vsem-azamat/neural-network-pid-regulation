@@ -1,57 +1,74 @@
+"""Lumped-capacity thermal plant: a first-order system with a heat input."""
+
 import torch
 from torch import Tensor
 
-from .base import BaseSystem
+from .base import ZERO, BaseSystem
+
+ROOM_TEMPERATURE = torch.tensor(293.15)  # 20 °C in kelvin
 
 
 class Thermal(BaseSystem):
+    """C·dT/dt = Q + d − h·(T − T_amb)
+
+    Newton's law of cooling is written against the *ambient* temperature.  The
+    earlier form, ``C·dT/dt = Q − h·T``, exchanges heat with 0 K instead: it
+    needs 4 kW just to hold 400 K, and with the heater off it drives the plant
+    towards absolute zero rather than towards room temperature.
+    """
+
     def __init__(
         self,
         thermal_capacity: Tensor,
         heat_transfer_coefficient: Tensor,
         dt: Tensor,
-        initial_temperature: Tensor = torch.tensor(293.15),  # 20°C in Kelvin
+        initial_temperature: Tensor = ROOM_TEMPERATURE,
+        ambient_temperature: Tensor | None = None,
     ) -> None:
         """
-        A simple first-order thermal system.
-
         Args:
-            thermal_capacity (float): thermal capacity of the system (J/K)
-            heat_transfer_coefficient (float): heat transfer coefficient (W/K)
-            dt (float): time step between the current and previous state (s)
+            thermal_capacity: Heat capacity C, J/K.
+            heat_transfer_coefficient: Loss coefficient h, W/K.
+            dt: Integration step, s.
+            initial_temperature: Starting temperature, K.
+            ambient_temperature: Environment temperature, K. Defaults to the
+                initial temperature, i.e. the plant starts at equilibrium.
         """
-        self.thermal_capacity = thermal_capacity
-        self.heat_transfer_coefficient = heat_transfer_coefficient
-        self.dt = dt
-        self.initial_temperature = initial_temperature
+        self.thermal_capacity = torch.as_tensor(thermal_capacity, dtype=torch.float32)
+        self.heat_transfer_coefficient = torch.as_tensor(
+            heat_transfer_coefficient, dtype=torch.float32
+        )
+        self.dt = torch.as_tensor(dt, dtype=torch.float32)
+        self.initial_temperature = torch.as_tensor(
+            initial_temperature, dtype=torch.float32
+        )
+        self.ambient_temperature = (
+            self.initial_temperature
+            if ambient_temperature is None
+            else torch.as_tensor(ambient_temperature, dtype=torch.float32)
+        )
+
         self.temperature = self.initial_temperature.clone()
-        self.temp_derivative = torch.tensor(0.0)  # dT/dt
+        self.temp_derivative = torch.tensor(0.0)
 
-    def apply_control(
-        self, control_output: Tensor, disturbance: Tensor = torch.tensor(0.0)
-    ) -> Tensor:
-        """
-        Update the temperature of the system based on the control output (heat input)
-
-        Equation of model:
-            dT/dt = (Q - h*T + disturbance) / C
-            T(t+dt) = T(t) + dT/dt * dt
-        where T is the temperature, Q is the heat input, h is the heat transfer coefficient,
-        and C is the thermal capacity
-        """
-        temp_derivative = (
-            control_output
-            - self.heat_transfer_coefficient * self.temperature
-            + disturbance
+    def apply_control(self, control_output: Tensor, disturbance: Tensor = ZERO) -> Tensor:
+        """Advance one step under heat input ``control_output`` plus ``disturbance`` (W)."""
+        heat_loss = self.heat_transfer_coefficient * (
+            self.temperature - self.ambient_temperature
+        )
+        self.temp_derivative = (
+            control_output + disturbance - heat_loss
         ) / self.thermal_capacity
-        self.temp_derivative = temp_derivative
-        self.temperature = self.temperature + temp_derivative * self.dt
+        self.temperature = self.temperature + self.temp_derivative * self.dt
         return self.temperature
 
     def reset(self) -> None:
-        """Reset the system temperature to initial conditions"""
         self.temperature = self.initial_temperature.clone()
         self.temp_derivative = torch.tensor(0.0)
+
+    def detach_state(self) -> None:
+        self.temperature = self.temperature.detach()
+        self.temp_derivative = self.temp_derivative.detach()
 
     @property
     def X(self) -> Tensor:
@@ -65,31 +82,21 @@ class Thermal(BaseSystem):
     def d2XdT2(self) -> Tensor:
         return torch.tensor(0.0)
 
-    @property
     def min_dt(self, oversampling_factor: float = 10.0) -> Tensor:
-        """
-        Calculate the minimum dt for good approximation based on the system's time constant
-        and the Nyquist criterion.
-
-        Args:
-            oversampling_factor (float): Factor by which to oversample the Nyquist rate (default is 10)
-
-        Returns:
-            Tensor: Minimum dt value
-        """
-        # Calculate the system's time constant (tau)
+        """Sampling step that resolves the plant's time constant τ = C/h."""
         tau = self.thermal_capacity / self.heat_transfer_coefficient
+        nyquist_dt = torch.pi * tau / oversampling_factor
+        max_stable_dt = 2.0 * tau
+        return torch.min(nyquist_dt, max_stable_dt)
 
-        # The system's cutoff frequency (omega_c)
-        omega_c = 1.0 / tau
+    @property
+    def tau(self) -> Tensor:
+        """Open-loop time constant, s."""
+        return self.thermal_capacity / self.heat_transfer_coefficient
 
-        # Apply the Nyquist criterion with oversampling
-        min_dt = (torch.pi) / (oversampling_factor * omega_c)
-
-        # Ensure stability for the Euler integration method
-        max_stable_dt = 2.0 * tau  # Stability condition for first-order system
-
-        # Choose the smaller dt to satisfy both criteria
-        min_dt = torch.min(min_dt, max_stable_dt)
-
-        return min_dt
+    @property
+    def steady_state_power(self) -> Tensor:
+        """Heat input needed to hold the current temperature, W."""
+        return self.heat_transfer_coefficient * (
+            self.temperature - self.ambient_temperature
+        )
