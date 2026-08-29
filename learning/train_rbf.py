@@ -11,7 +11,6 @@ thermal version drift into evaluating in Celsius while its plant runs in kelvin.
 import argparse
 
 import numpy as np
-import torch
 
 from config import load_config
 from learning.rbf_dataset import (

@@ -11,8 +11,8 @@ Each generator here is deterministic given a seeded RNG, so a run reproduces
 exactly.
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 import numpy as np
 import torch
@@ -87,7 +87,9 @@ def make_episode(
     )
 
 
-def build_system(name: str, config: ConfigPack, overrides: dict | None = None) -> BaseSystem:
+def build_system(
+    name: str, config: ConfigPack, overrides: dict | None = None
+) -> BaseSystem:
     """Instantiate a plant from config, with optional per-episode overrides."""
     parameters = dict(config.system)
     parameters.update(overrides or {})

@@ -1,7 +1,7 @@
 """Configuration and result containers for one simulation episode."""
 
 from dataclasses import dataclass, field, fields
-from typing import Generic, List, TypeVar
+from typing import Generic, TypeVar
 
 import numpy as np
 import torch
@@ -48,14 +48,14 @@ class SimulationConfig(Generic[T]):
             control signal.
     """
 
-    setpoints: List[T]
+    setpoints: list[T]
     dt: T
     sequence_length: int = 50
     tbptt_window: int = 25
     warm_up_steps: int = 10
     pid_gain_factor: float | tuple[float, float, float] = 15.0
     error_scale: float = 1.0
-    disturbances: List[T] | None = None
+    disturbances: list[T] | None = None
 
     @property
     def num_steps(self) -> int:
@@ -84,18 +84,18 @@ class SimulationResults(Generic[T]):
     directly without an off-by-one correction.
     """
 
-    time_points: List[T] = field(default_factory=list)
-    setpoints: List[T] = field(default_factory=list)
-    positions: List[T] = field(default_factory=list)
-    control_outputs: List[T] = field(default_factory=list)
-    rbf_predictions: List[T] = field(default_factory=list)
-    error_history: List[T] = field(default_factory=list)
-    error_diff_history: List[T] = field(default_factory=list)
-    kp_values: List[T] = field(default_factory=list)
-    ki_values: List[T] = field(default_factory=list)
-    kd_values: List[T] = field(default_factory=list)
-    disturbances: List[T] = field(default_factory=list)
-    losses: List[float] = field(default_factory=list)
+    time_points: list[T] = field(default_factory=list)
+    setpoints: list[T] = field(default_factory=list)
+    positions: list[T] = field(default_factory=list)
+    control_outputs: list[T] = field(default_factory=list)
+    rbf_predictions: list[T] = field(default_factory=list)
+    error_history: list[T] = field(default_factory=list)
+    error_diff_history: list[T] = field(default_factory=list)
+    kp_values: list[T] = field(default_factory=list)
+    ki_values: list[T] = field(default_factory=list)
+    kd_values: list[T] = field(default_factory=list)
+    disturbances: list[T] = field(default_factory=list)
+    losses: list[float] = field(default_factory=list)
 
     _TENSOR_FIELDS = (
         "time_points",
@@ -145,7 +145,7 @@ class SimulationResults(Generic[T]):
             setattr(out, f.name, values)
         return out
 
-    def as_floats(self, name: str) -> List[float]:
+    def as_floats(self, name: str) -> list[float]:
         """One field as plain Python floats, for metrics and plotting."""
         return [
             float(v.detach()) if isinstance(v, torch.Tensor) else float(v)

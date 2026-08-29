@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 
 from config import cnfg
 
+
 def plot_training_history(
     history: list[dict],
     system_name: str = "<System>",
@@ -214,7 +215,7 @@ def plot_metric_distributions(
     bins = 12
     span = (min(finite), max(finite)) if finite else None
 
-    for ax, name in zip(axs, names):
+    for ax, name in zip(axs, names, strict=True):
         values = [v for v in per_controller[name] if _is_finite(v)]
         if not values:
             ax.set_visible(False)

@@ -146,7 +146,7 @@ def win_rate(a: list[StepMetrics], b: list[StepMetrics], field: str) -> float:
     than scored as a win for whoever happened to produce a value.
     """
     wins = comparable = 0
-    for left, right in zip(a, b):
+    for left, right in zip(a, b, strict=True):
         x, y = getattr(left, field), getattr(right, field)
         if np.isnan(x) or np.isnan(y):
             continue
@@ -214,15 +214,23 @@ def main(system_name: str, seed: int, runs: int, show: bool) -> None:
         make_episode(config.scenario, steps, dt, tune_rng) for _ in range(8)
     ]
     eval_rng = np.random.default_rng(COMPARE_SEED_BASE + seed + 7777)
-    eval_episodes = [make_episode(config.scenario, steps, dt, eval_rng) for _ in range(runs)]
+    eval_episodes = [
+        make_episode(config.scenario, steps, dt, eval_rng) for _ in range(runs)
+    ]
 
     # ── baselines ───────────────────────────────────────────────────────
     nominal = build_system(system_name, config)
     classical = baselines.classical(nominal, config)
-    print(f"Classical tuning ({classical.name}): "
-          f"Kp={classical.gains[0]:.3f} Ki={classical.gains[1]:.3f} Kd={classical.gains[2]:.3f}")
+    print(
+        f"Classical tuning ({classical.name}): "
+        f"Kp={classical.gains[0]:.3f} Ki={classical.gains[1]:.3f} "
+        f"Kd={classical.gains[2]:.3f}"
+    )
 
-    print(f"\nSearching for the best constant gains over {len(tune_episodes)} episodes...")
+    print(
+        f"\nSearching for the best constant gains over "
+        f"{len(tune_episodes)} episodes..."
+    )
 
     def objective(gains):
         arm = Arm(name="search", gains=gains)
@@ -277,7 +285,7 @@ def main(system_name: str, seed: int, runs: int, show: bool) -> None:
             show=show,
         )
         plot_metric_distributions(
-            {name: [getattr(m, "iae") for m in runs_] for name, runs_ in per_arm.items()},
+            {name: [m.iae for m in runs_] for name, runs_ in per_arm.items()},
             metric_label=LABELS["iae"],
             system_name=system_name.capitalize(),
             protocol=protocol,

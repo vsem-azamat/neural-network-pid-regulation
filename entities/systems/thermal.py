@@ -51,8 +51,10 @@ class Thermal(BaseSystem):
         self.temperature = self.initial_temperature.clone()
         self.temp_derivative = torch.tensor(0.0)
 
-    def apply_control(self, control_output: Tensor, disturbance: Tensor = ZERO) -> Tensor:
-        """Advance one step under heat input ``control_output`` plus ``disturbance`` (W)."""
+    def apply_control(
+        self, control_output: Tensor, disturbance: Tensor = ZERO
+    ) -> Tensor:
+        """Advance one step under heat input plus ``disturbance``, both in W."""
         heat_loss = self.heat_transfer_coefficient * (
             self.temperature - self.ambient_temperature
         )

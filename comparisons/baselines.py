@@ -19,8 +19,8 @@ Three of them, in increasing order of difficulty:
    it scores below the searched fixed gains.
 """
 
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Callable, Iterable
 
 import numpy as np
 import torch
@@ -83,7 +83,7 @@ def optimise_fixed_gains(
     centre = ceiling_array * 0.5
     per_round = max(1, iterations // (refinements + 1))
 
-    for round_index in range(refinements + 1):
+    for _ in range(refinements + 1):
         for _ in range(per_round):
             candidate = rng.uniform(
                 np.maximum(centre - span / 2, 0.0),

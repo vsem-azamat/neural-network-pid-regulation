@@ -4,7 +4,9 @@ A comparison is only as meaningful as the baseline it beats, so this module
 identifies the plant properly instead of forcing one model onto every system:
 
 * :func:`identify_fopdt` fits a first-order-plus-dead-time model from an
-  open-loop step test.  It is the right model for the thermal plant.
+  open-loop step test, by the two-point (Smith) method.  It is the right model
+  for the thermal plant, and ``tests/test_tuning.py`` pins it against that
+  plant's analytically known K and T.
 * :func:`relay_autotune` runs an Åström–Hägglund relay experiment to measure the
   ultimate gain and period directly, for plants that have a finite one.
 * :func:`pole_placement` solves for the gains from the plant's own structure.
@@ -52,13 +54,18 @@ def identify_fopdt(
     steps: int,
     final_input: float,
     initial_input: float = 0.0,
+    negligible_dead_time: float = 0.02,
 ) -> FOPDT:
-    """Fit a FOPDT model with the two-point (35 % / 85 %) method.
+    """Fit a FOPDT model with the two-point (35.3 % / 85.3 %) method.
+
+    Args:
+        negligible_dead_time: Dead times below this fraction of the identified
+            time constant are reported as zero.
 
     Raises:
         IdentificationError: if the input does not change, the plant does not
             respond, or the response is oscillatory (in which case the fit is
-            not merely inaccurate but meaningless — use :func:`relay_autotune`).
+            not merely inaccurate but meaningless — use :func:`pole_placement`).
     """
     delta_u = final_input - initial_input
     if delta_u == 0:
@@ -85,6 +92,13 @@ def identify_fopdt(
             "for this plant. Use relay autotuning instead."
         )
 
+    # Two-point (Smith) identification at 35.3 % and 85.3 % of the final value.
+    #
+    # The coefficients belong to this pair of levels and cannot be mixed with
+    # another variant's. The earlier code read off 35 % / 85 % but applied
+    # T = 1.5*(t85 - t35), which belongs to the 28.3 % / 63.2 % variant: on a
+    # pure first-order plant with tau = 100 s that returns T = 222 s and a
+    # *negative* dead time, and every gain derived from it inherits the error.
     def time_at(fraction: float) -> float:
         level = y0 + fraction * delta_y
         reached = (y >= level) if delta_y > 0 else (y <= level)
@@ -95,10 +109,17 @@ def identify_fopdt(
             )
         return float(time_np[index])
 
-    t_35, t_85 = time_at(0.35), time_at(0.85)
+    t_35, t_85 = time_at(0.353), time_at(0.853)
 
-    T = 1.5 * (t_85 - t_35)
-    L = max(0.0, t_35 - 0.29 * T)
+    T = 0.67 * (t_85 - t_35)
+    L = max(0.0, 1.3 * t_35 - 0.29 * t_85)
+
+    # A dead time far below the time constant is sampling noise, not transport
+    # delay, and the rules that divide by it are extremely sensitive there: an
+    # L of 1 s against T = 100 s pushed IMC to Kp = 1072 instead of ~105.
+    if L < negligible_dead_time * T:
+        L = 0.0
+
     K = delta_y / delta_u
     return FOPDT(K=K, L=L, T=T)
 
@@ -144,7 +165,7 @@ def relay_autotune(
 
     # Use the last few full cycles, after the transient has died out.
     recent = switch_times[-5:]
-    half_periods = [b - a for a, b in zip(recent, recent[1:])]
+    half_periods = [b - a for a, b in zip(recent, recent[1:], strict=False)]
     ultimate_period = 2.0 * (sum(half_periods) / len(half_periods))
 
     settled = outputs[len(outputs) // 2 :]

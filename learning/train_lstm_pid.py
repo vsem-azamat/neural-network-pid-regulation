@@ -193,7 +193,7 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
     ceiling = config.control.gain_ceiling
     initial_fraction = tuple(
         g / c
-        for g, c in zip(config.control.initial_gains, ceiling)
+        for g, c in zip(config.control.initial_gains, ceiling, strict=True)
     )
     lstm_model = LSTMAdaptivePID(
         input_size=5,
@@ -293,23 +293,26 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
         }
         report_table(name, protocols[name])
 
+    # One representative episode, to record how well the surrogate tracked the
+    # plant under the trained controller.
+    probe = eval_episodes[0]
+    probe_results = run_episode(
+        system=build_system(system_name, config, probe.plant_parameters),
+        pid=build_pid(config),
+        simulation_config=build_simulation_config(config, probe),
+        extract_rbf_input=extract_rbf,
+        extract_lstm_input=extract_lstm_input,
+        rbf_model=rbf_model,
+        lstm_model=lstm_model,
+        session="validation",
+    ).results
+
     summary = {
         "system": system_name,
         "seed": seed,
         "epochs": num_epochs,
         "loss_target": lstm_config.loss_target,
-        "surrogate": surrogate_health(
-            run_episode(
-                system=build_system(system_name, config, eval_episodes[0].plant_parameters),
-                pid=build_pid(config),
-                simulation_config=build_simulation_config(config, eval_episodes[0]),
-                extract_rbf_input=extract_rbf,
-                extract_lstm_input=extract_lstm_input,
-                rbf_model=rbf_model,
-                lstm_model=lstm_model,
-                session="validation",
-            ).results
-        ),
+        "surrogate": surrogate_health(probe_results),
         "protocols": protocols,
         "history": [vars(r) for r in history],
     }

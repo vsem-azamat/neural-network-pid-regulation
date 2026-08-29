@@ -28,7 +28,9 @@ class BaseSystem(ABC):
     dt: Tensor
 
     @abstractmethod
-    def apply_control(self, control_output: Tensor, disturbance: Tensor = ZERO) -> Tensor:
+    def apply_control(
+        self, control_output: Tensor, disturbance: Tensor = ZERO
+    ) -> Tensor:
         """Advance the plant one time step.
 
         Args:
