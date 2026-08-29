@@ -133,7 +133,13 @@ class PID:
 
     def _derivative_second_difference(self, dt: Tensor) -> Tensor:
         """Second difference of the derivative signal, for the incremental form."""
-        if self._y_k is not None and self.y_k_2 is not None:
+        if self._y_k is not None:
+            if self.y_k_2 is None:
+                # Not enough measurement history to estimate a derivative yet.
+                # Falling back to the error here would reintroduce the kick at
+                # exactly the moment it does the most damage: the first sample
+                # after a setpoint change, when the error jumps by the whole step.
+                return torch.zeros_like(self.e_k)
             # d/dt of (-y): e = r - y, so this matches the error-based term
             # whenever the reference is constant, and ignores its steps.
             return -(self._y_k - 2.0 * self.y_k_1 + self.y_k_2) / dt
@@ -141,7 +147,9 @@ class PID:
 
     def _derivative_first_difference(self, error: Tensor, dt: Tensor) -> Tensor:
         """First difference of the derivative signal, for the positional forms."""
-        if self._y_k is not None and self.y_k_1 is not None:
+        if self._y_k is not None:
+            if self.y_k_1 is None:
+                return torch.zeros_like(error)
             return -(self._y_k - self.y_k_1) / dt
         return (error - self.prev_error) / dt
 

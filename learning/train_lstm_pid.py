@@ -188,13 +188,23 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
     for parameter in rbf_model.parameters():
         parameter.requires_grad_(False)  # the surrogate is fixed during control training
 
+    # Warm-start at the classical gains, so training is measured by whether it
+    # improves on a competent controller rather than on a random one.
+    ceiling = config.control.gain_ceiling
+    initial_fraction = tuple(
+        g / c
+        for g, c in zip(config.control.initial_gains, ceiling)
+    )
     lstm_model = LSTMAdaptivePID(
         input_size=5,
         hidden_size=lstm_config.model.hidden_size,
         output_size=3,
         num_layers=lstm_config.model.num_layers,
         dropout=lstm_config.model.dropout,
+        initial_gain_fraction=initial_fraction,
     )
+    print(f"  warm start at Kp/Ki/Kd = {config.control.initial_gains} "
+          f"(fractions {tuple(round(f, 3) for f in initial_fraction)})")
 
     optimizer_cls = optim.Adam if lstm_config.optimizer.name == "adam" else optim.SGD
     kwargs = (
@@ -241,7 +251,12 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
             session="train",
             optimizer=optimizer,
             grad_clip=lstm_config.grad_clip,
-            loss_function=partial(tracking_loss, target=lstm_config.loss_target),
+            loss_function=partial(
+                tracking_loss,
+                target=lstm_config.loss_target,
+                overshoot_weight=lstm_config.overshoot_weight,
+                effort_weight=lstm_config.effort_weight,
+            ),
         )
         scheduler.step()
 

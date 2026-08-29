@@ -84,10 +84,15 @@ def tracking_loss(
             and a constant has zero gradient, so training silently stops. See
             :func:`surrogate_health`.
 
-    The error is divided by the reference magnitude so that episodes with large
-    setpoints do not dominate the gradient purely by scale — without this the
-    thermal plant (setpoints in the hundreds of kelvin) trains on a loss three
-    orders of magnitude larger than the trolley's.
+    Errors are divided by ``config.error_scale`` — the characteristic size of a
+    tracking error for this plant — so one set of loss weights works for both
+    plants.
+
+    Normalising by the reference magnitude instead is wrong whenever the plant
+    operates at a large offset: the thermal setpoints are ~325 K, but a 30 K
+    error is a serious one, and dividing it by 325 shrank the loss to 0.01 and
+    the gradient to 1e-6. The controller was not converging, it was being told
+    almost nothing.
     """
     source = results.rbf_predictions if target == "surrogate" else results.positions
     predicted = torch.stack(source[window_start:window_end])
@@ -95,15 +100,17 @@ def tracking_loss(
         [torch.as_tensor(s).reshape(-1)[0] for s in results.setpoints[window_start:window_end]]
     )
 
-    scale = reference.abs().mean().detach().clamp(min=1.0)
-    error = (predicted - reference) / scale
+    error = (predicted - reference) / max(abs(config.error_scale), 1e-6)
 
     loss = torch.mean(error**2) + overshoot_weight * torch.mean(torch.relu(error))
 
     if effort_weight:
         controls = torch.stack(results.control_outputs[window_start:window_end])
         if controls.numel() > 1:
-            loss = loss + effort_weight * torch.mean(torch.diff(controls) ** 2)
+            # Normalised by the actuator's own range, so one weight means the
+            # same thing on a +/-50 N trolley and a 0-4 kW heater.
+            span = max(controls.detach().abs().max().item(), 1.0)
+            loss = loss + effort_weight * torch.mean((torch.diff(controls) / span) ** 2)
     return loss
 
 

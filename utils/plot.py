@@ -141,3 +141,111 @@ def plot_rbf_training_results(
     if show:
         plt.show()
     plt.close(fig)
+
+
+def plot_comparison_episode(
+    per_controller: dict,
+    system_name: str = "<System>",
+    protocol: str = "",
+    show: bool = False,
+) -> None:
+    """Overlay every controller's trajectory on one shared episode.
+
+    They are on the same episode by construction, so a single setpoint trace
+    applies to all of them — which is exactly the property the comparison
+    depends on and the earlier version did not have.
+    """
+    fig, axs = plt.subplots(3, 1, figsize=(12, 12), sharex=True)
+    reference_drawn = False
+
+    for name, results in per_controller.items():
+        numeric = results.to_numpy()
+        time = numeric.time_points
+        if not reference_drawn:
+            axs[0].plot(time, numeric.setpoints, "k--", linewidth=1.4, label="Setpoint")
+            if any(float(d) != 0.0 for d in numeric.disturbances):
+                axs[1].plot(time, numeric.disturbances, color="tab:gray",
+                            linewidth=1.0, alpha=0.7, label="Disturbance")
+            reference_drawn = True
+        axs[0].plot(time, numeric.positions, linewidth=1.6, label=name)
+        axs[1].plot(time, numeric.control_outputs, linewidth=1.3, label=name)
+        axs[2].plot(time, numeric.kp_values, linewidth=1.3, label=f"{name} Kp")
+
+    axs[0].set_ylabel("Output")
+    axs[0].set_title(f"{system_name} - {protocol} protocol")
+    axs[1].set_ylabel("Control signal")
+    axs[2].set_ylabel("Kp")
+    axs[2].set_xlabel("Time (s)")
+    for ax in axs:
+        ax.legend(loc="best", fontsize=9)
+        ax.grid(True, alpha=0.3)
+
+    plt.tight_layout()
+    path = os.path.join(
+        cnfg.METRICS_PLOTS, f"{system_name.lower()}_{protocol}_episode.png"
+    )
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    plt.savefig(path, bbox_inches="tight", dpi=150)
+    print(f"Plot saved to {path}")
+    if show:
+        plt.show()
+    plt.close(fig)
+
+
+def plot_metric_distributions(
+    per_controller: dict[str, list[float]],
+    metric_label: str,
+    system_name: str = "<System>",
+    protocol: str = "",
+    show: bool = False,
+) -> None:
+    """One panel per controller, each annotated with *its own* statistics.
+
+    The earlier version drew the third panel's histogram from the static run but
+    labelled it with the dynamic run's mean and standard deviation, so the
+    annotation described a different distribution from the bars underneath it.
+    """
+    names = list(per_controller)
+    fig, axs = plt.subplots(len(names), 1, figsize=(11, 3 * len(names)), sharex=True)
+    if len(names) == 1:
+        axs = [axs]
+
+    finite = [v for values in per_controller.values() for v in values if _is_finite(v)]
+    bins = 12
+    span = (min(finite), max(finite)) if finite else None
+
+    for ax, name in zip(axs, names):
+        values = [v for v in per_controller[name] if _is_finite(v)]
+        if not values:
+            ax.set_visible(False)
+            continue
+        mean = sum(values) / len(values)
+        std = (sum((v - mean) ** 2 for v in values) / len(values)) ** 0.5
+        ax.hist(values, bins=bins, range=span, edgecolor="black", alpha=0.85)
+        ax.axvline(mean, color="r", linestyle="--", linewidth=2,
+                   label=f"mean {mean:.3f}")
+        ax.axvline(mean + std, color="g", linestyle=":", linewidth=1.6,
+                   label=f"sd {std:.3f}")
+        ax.axvline(mean - std, color="g", linestyle=":", linewidth=1.6)
+        ax.set_title(f"{name}  (n={len(values)})", fontsize=11)
+        ax.set_ylabel("Episodes")
+        ax.legend(loc="upper right", fontsize=9)
+        ax.grid(True, alpha=0.3)
+
+    axs[-1].set_xlabel(metric_label)
+    fig.suptitle(f"{system_name} - {metric_label} - {protocol}", fontweight="bold")
+    plt.tight_layout(rect=(0, 0, 1, 0.97))
+
+    path = os.path.join(
+        cnfg.METRICS_PLOTS, f"{system_name.lower()}_{protocol}_iae_distribution.png"
+    )
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    plt.savefig(path, bbox_inches="tight", dpi=150)
+    print(f"Plot saved to {path}")
+    if show:
+        plt.show()
+    plt.close(fig)
+
+
+def _is_finite(value: float) -> bool:
+    return value == value and abs(value) != float("inf")
