@@ -1,0 +1,57 @@
+"""Builds the history window the gain-scheduling LSTM sees.
+
+One implementation serves both plants. Previously each training script carried
+its own near-identical copy, and the comparison code imported the *trolley*
+one and used it for the thermal plant too — which only worked by coincidence,
+because both happened to be configured with five input features.
+
+The features are dimensionless by construction:
+
+    0  e / error_scale                normalised tracking error
+    1  Δe / error_scale               normalised error rate
+    2  Kp / Kp_max                    current gains, as a fraction of their
+    3  Ki / Ki_max                    allowed range
+    4  Kd / Kd_max
+
+Feeding raw signals instead — as the original did, with absolute positions and
+setpoints — means the network sees inputs in the hundreds for the thermal plant
+and single digits for the trolley, so one architecture cannot serve both and the
+first layer spends its capacity undoing the scale.
+"""
+
+import torch
+from torch import Tensor
+
+from classes.simulation import SimulationConfig, SimulationResults
+
+N_FEATURES = 5
+
+
+def extract_lstm_input(
+    simulation_config: SimulationConfig, results: SimulationResults
+) -> Tensor:
+    """Return a ``(1, sequence_length, N_FEATURES)`` window, zero-padded at the start."""
+    length = simulation_config.sequence_length
+    window = torch.zeros(length, N_FEATURES)
+
+    available = min(length, len(results.error_history))
+    if available == 0:
+        return window.unsqueeze(0)
+
+    error_scale = max(abs(simulation_config.error_scale), 1e-6)
+    gain_scale = simulation_config.gain_scale.clamp(min=1e-6)
+
+    def recent(name: str) -> Tensor:
+        values = getattr(results, name)[-available:]
+        return torch.stack([torch.as_tensor(v).reshape(-1)[0] for v in values]).detach()
+
+    window[-available:, 0] = recent("error_history") / error_scale
+    window[-available:, 1] = recent("error_diff_history") / error_scale
+    window[-available:, 2] = recent("kp_values") / gain_scale[0]
+    window[-available:, 3] = recent("ki_values") / gain_scale[1]
+    window[-available:, 4] = recent("kd_values") / gain_scale[2]
+
+    # The window is an observation, not part of the differentiable control path:
+    # gradients reach the LSTM through its *output* (the gains it sets), which is
+    # what the tracking loss actually depends on.
+    return window.unsqueeze(0)
