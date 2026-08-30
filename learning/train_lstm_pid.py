@@ -26,7 +26,7 @@ from config import available_studies, cnfg, load_config
 from config.models import ConfigPack
 from entities.pid import PID
 from learning.scenarios import Episode, build_system, make_episode
-from learning.utils import extract_lstm_input
+from learning.utils import N_FEATURES, extract_lstm_input
 from learning.utils.extract_rbf_input import EXTRACTORS
 from models.pid_lstm import LSTMAdaptivePID
 from utils import save_load
@@ -69,6 +69,7 @@ def build_simulation_config(
         warm_up_steps=lstm.warm_up_steps,
         pid_gain_factor=config.control.gain_ceiling,
         error_scale=config.control.error_scale,
+        operating_range=config.scenario.setpoint.as_tuple(),
     )
 
 
@@ -195,7 +196,7 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
         for g, c in zip(config.control.initial_gains, ceiling, strict=True)
     )
     lstm_model = LSTMAdaptivePID(
-        input_size=5,
+        input_size=N_FEATURES,
         hidden_size=lstm_config.model.hidden_size,
         output_size=3,
         num_layers=lstm_config.model.num_layers,

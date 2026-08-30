@@ -12,11 +12,24 @@ The features are dimensionless by construction:
     2  Kp / Kp_max                    current gains, as a fraction of their
     3  Ki / Ki_max                    allowed range
     4  Kd / Kd_max
+    5  (y − mid) / halfspan           operating point
+    6  (r − mid) / halfspan           commanded operating point
 
 Feeding raw signals instead — as the original did, with absolute positions and
 setpoints — means the network sees inputs in the hundreds for the thermal plant
 and single digits for the trolley, so one architecture cannot serve both and the
 first layer spends its capacity undoing the scale.
+
+Features 5 and 6 are the *operating point*, and without them a gain scheduler
+cannot do the one thing gain scheduling is for. On a nonlinear plant the right
+gains are a function of where the plant is sitting: the hardening spring is 14
+times stiffer at the end of its travel than at the origin, and the radiative
+thermal plant loses heat three times faster at 500 K than at 320 K. An
+error-only feature set is invariant to all of that — the network sees the same
+input at both ends of the range and must emit the same gains, so it is
+structurally incapable of scheduling however long it trains. Normalising them
+against the study's own operating range keeps them dimensionless, so one
+architecture still serves a plant in metres and a plant in kelvin.
 """
 
 import torch
@@ -24,7 +37,7 @@ from torch import Tensor
 
 from classes.simulation import SimulationConfig, SimulationResults
 
-N_FEATURES = 5
+N_FEATURES = 7
 
 
 def extract_lstm_input(
@@ -62,6 +75,11 @@ def extract_lstm_input(
     window[-available:, 2] = recent("kp_values") / gain_scale[0]
     window[-available:, 3] = recent("ki_values") / gain_scale[1]
     window[-available:, 4] = recent("kd_values") / gain_scale[2]
+
+    midpoint = simulation_config.operating_midpoint
+    halfspan = simulation_config.operating_halfspan
+    window[-available:, 5] = (recent("positions") - midpoint) / halfspan
+    window[-available:, 6] = (recent("setpoints") - midpoint) / halfspan
 
     # The window is an observation, not part of the differentiable control path:
     # gradients reach the LSTM through its *output* (the gains it sets), which is

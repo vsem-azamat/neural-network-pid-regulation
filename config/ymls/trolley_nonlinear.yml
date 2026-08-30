@@ -47,13 +47,19 @@ learning:
       hidden_size: 80
 
 control:
-  output_min: -50.0
-  output_max: 50.0
+  # A hardening spring needs k*x + k3*x^3 = 82.5 N just to *hold* x = 15 m. At
+  # the linear plant's +/-50 N the trolley could not reach past 12.3 m, so a
+  # third of the setpoint range was permanently saturated - and gains barely
+  # matter against a saturated actuator, which flattens the cost surface and
+  # hides whatever benefit scheduling has. tests/test_scenarios.py now checks
+  # that every configured setpoint is actually holdable.
+  output_min: -150.0
+  output_max: 150.0
   # Pole placement on the *linearised-at-the-origin* plant. It is the honest
   # classical starting point: a tuning rule has no way to know the stiffness
   # changes with position.
   initial_gains: [9.4, 8.0, 4.7]
-  gain_ceiling: [60.0, 80.0, 25.0]
+  gain_ceiling: [150.0, 200.0, 50.0]
   error_scale: 10.0
   tuning_step_input: 10.0
 

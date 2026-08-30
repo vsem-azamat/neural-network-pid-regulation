@@ -44,6 +44,9 @@ class SimulationConfig(Generic[T]):
             normalise the features fed to the LSTM. Without it the network sees
             hundreds of kelvin for one plant and single-digit metres for the
             other, and the same architecture cannot serve both.
+        operating_range: (low, high) of the plant output the study covers. Used
+            to give the network a dimensionless *operating point*, which is the
+            variable a gain schedule for a nonlinear plant has to key on.
         disturbances: Optional load disturbance per step, same units as the
             control signal.
     """
@@ -55,6 +58,7 @@ class SimulationConfig(Generic[T]):
     warm_up_steps: int = 10
     pid_gain_factor: float | tuple[float, float, float] = 15.0
     error_scale: float = 1.0
+    operating_range: tuple[float, float] = (0.0, 1.0)
     disturbances: list[T] | None = None
 
     @property
@@ -68,6 +72,14 @@ class SimulationConfig(Generic[T]):
         if isinstance(factor, (int, float)):
             factor = (float(factor),) * 3
         return torch.tensor(factor, dtype=torch.float32)
+
+    @property
+    def operating_midpoint(self) -> float:
+        return 0.5 * (self.operating_range[0] + self.operating_range[1])
+
+    @property
+    def operating_halfspan(self) -> float:
+        return max(0.5 * (self.operating_range[1] - self.operating_range[0]), 1e-6)
 
     def disturbance_at(self, step: int) -> torch.Tensor:
         if self.disturbances is None:

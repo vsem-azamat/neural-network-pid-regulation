@@ -11,7 +11,7 @@ import torch
 
 from classes.simulation import SimulationConfig, SimulationResults
 from comparisons import baselines
-from config import load_config
+from config import available_studies, load_config
 from entities.pid import PID
 from learning.scenarios import build_system
 from utils import tuning
@@ -34,7 +34,7 @@ def test_the_test_suite_is_actually_committed():
 
 
 # ── the classical baseline was crippled by its own measurement ───────────
-@pytest.mark.parametrize("system_name", ["trolley", "thermal"])
+@pytest.mark.parametrize("system_name", available_studies())
 def test_step_test_is_long_enough_to_identify_the_plant(system_name):
     """A fixed 600 samples is 3 tau on the thermal plant: the response has not
     settled, so K and T come out low and a dead time appears that is not there,
@@ -43,7 +43,12 @@ def test_step_test_is_long_enough_to_identify_the_plant(system_name):
     system = build_system(config)
     steps = tuning.step_test_steps(system)
 
-    _, response = system.step_response(steps=steps, final_input=1.0)
+    # Use the amplitude the tuner itself uses. A unit step is below the
+    # trolley's 2 N break-away force, so the plant sticks and the "response"
+    # is mostly the residual oscillation of something that never moved.
+    _, response = system.step_response(
+        steps=steps, final_input=config.control.tuning_step_input
+    )
     tail = response[int(0.9 * len(response)) :]
     drift = abs(float(tail.max()) - float(tail.min()))
     travel = abs(float(response[-1]) - float(response[0]))
@@ -60,19 +65,44 @@ def test_thermal_classical_tuning_recovers_a_pi_controller():
     assert Kd == 0.0, "a first-order plant with no dead time needs no derivative"
 
 
-@pytest.mark.parametrize("system_name", ["trolley", "thermal"])
-def test_configured_initial_gains_match_what_the_tuner_returns(system_name):
-    """The warm start is documented as starting at the classical gains, which is
-    only true if the config and the tuner agree."""
+@pytest.mark.parametrize("system_name", available_studies())
+def test_configured_initial_gains_stabilise_the_nominal_plant(system_name):
+    """The warm start has to be a controller that works.
+
+    Not "equal to what the tuning rule returns": on the radiative thermal plant
+    the two-point fit is applied to a response that is not first-order at all and
+    comes back with Kp=498, Kd=539. That is a real property of applying a linear
+    identification rule to a nonlinear plant - and part of the reason gain
+    scheduling exists - but it is not something to warm-start from. What the warm
+    start must satisfy is that it holds a setpoint without diverging.
+    """
     config = load_config(system_name)
     system = build_system(config)
-    tuned = baselines.classical(system, config).gains
-    for name, configured, actual in zip(
-        ("Kp", "Ki", "Kd"), config.control.initial_gains, tuned, strict=True
-    ):
-        assert configured == pytest.approx(actual, rel=0.05, abs=0.05), (
-            f"{system_name} {name}: config says {configured}, tuner says {actual}"
-        )
+    system.reset()
+
+    pid = PID(*(torch.tensor(g) for g in config.control.initial_gains))
+    pid.set_limits(
+        torch.tensor(config.control.output_max),
+        torch.tensor(config.control.output_min),
+    )
+    low, high = config.scenario.setpoint.as_tuple()
+    target = torch.tensor(0.5 * (low + high))
+    dt = torch.tensor(config.learning.dt)
+
+    outputs = []
+    for _ in range(int(120.0 / config.learning.dt)):
+        error = target - system.X
+        pid_output = pid.compute(error, dt, measurement=system.X)
+        system.apply_control(pid_output)
+        outputs.append(float(system.X))
+
+    assert all(abs(v) < 1e6 for v in outputs), f"{system_name}: the loop diverged"
+    travel = abs(float(target) - outputs[0]) or 1.0
+    final_error = abs(outputs[-1] - float(target))
+    assert final_error < 0.25 * travel, (
+        f"{system_name}: warm-start gains leave {final_error:.3g} of error on a "
+        f"travel of {travel:.3g} - not a usable starting controller"
+    )
 
 
 # ── the loss had the same sign bug the metrics used to have ──────────────

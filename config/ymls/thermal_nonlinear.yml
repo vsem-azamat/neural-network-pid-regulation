@@ -50,8 +50,14 @@ learning:
 control:
   output_min: 0.0
   output_max: 9000.0
-  # IMC on the plant identified around ambient, where a step test would be run.
-  initial_gains: [50.0, 1.0, 0.0]
+  # Pole placement on the plant linearised at ambient. Deliberately NOT the
+  # output of the identification-based rule: applied to the radiative plant, the
+  # two-point fit describes a response that is not first-order and returns
+  # Kp=498, Kd=539. That is a genuine property of using a linear rule on a
+  # nonlinear plant - and one of the reasons gain scheduling exists - so it stays
+  # in the comparison as the "classical" arm, but it is not something to start
+  # training from.
+  initial_gains: [44.0, 1.6, 0.0]
   gain_ceiling: [600.0, 40.0, 50.0]
   error_scale: 30.0
   tuning_step_input: 2000.0

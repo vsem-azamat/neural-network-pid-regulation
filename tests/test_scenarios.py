@@ -2,13 +2,19 @@
 
 import numpy as np
 import pytest
+import torch
 
-from config import load_config
+from config import available_studies, load_config
 from learning.scenarios import build_system, episode_stream, make_episode
 
 
-@pytest.fixture(params=["trolley", "thermal"])
+@pytest.fixture(params=available_studies())
 def config(request):
+    """Every study in config/ymls, so a new one is covered the moment it exists.
+
+    Hardcoding two names here meant the nonlinear studies were added without a
+    single test running against them.
+    """
     return request.param, load_config(request.param)
 
 
@@ -114,4 +120,37 @@ def test_configured_dt_resolves_the_plant_dynamics(config):
         system = build_system(cfg, episode.plant_parameters)
         assert cfg.learning.dt < float(system.min_dt()), (
             f"dt={cfg.learning.dt} too large for {episode.plant_parameters}"
+        )
+
+
+def test_every_setpoint_is_reachable_by_the_actuator(config):
+    """A setpoint the actuator cannot hold is not a control problem.
+
+    On the hardening spring the force needed to hold a position grows as x³, so
+    a range that is fine for the linear plant can be a third unreachable once
+    the nonlinearity is switched on. Episodes spent against the limit say
+    nothing about the controller: no choice of gains changes a saturated output.
+    """
+    name, cfg = config
+    system = build_system(cfg)
+    low, high = cfg.scenario.setpoint.as_tuple()
+
+    for target in (low, high, 0.5 * (low + high)):
+        system.reset()
+        held = torch.tensor(
+            float(np.clip(0.0, cfg.control.output_min, cfg.control.output_max))
+        )
+        # Drive with maximum authority towards the target and see if it arrives.
+        limit = cfg.control.output_max if target >= float(system.X) else cfg.control.output_min
+        held = torch.tensor(float(limit))
+        reached = False
+        for _ in range(int(60.0 / cfg.learning.dt)):
+            system.apply_control(held)
+            value = float(system.X)
+            if (target >= 0 and value >= target) or (target < 0 and value <= target):
+                reached = True
+                break
+        assert reached, (
+            f"{name}: setpoint {target:g} is not reachable at full actuator "
+            f"authority ({limit:g}); the loop would sit saturated"
         )

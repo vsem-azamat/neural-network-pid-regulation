@@ -13,7 +13,7 @@ import torch
 from classes.simulation import SimulationConfig
 from entities.pid import PID
 from entities.systems import Trolley
-from learning.utils import extract_lstm_input, extract_rbf_input
+from learning.utils import N_FEATURES, extract_lstm_input, extract_rbf_input
 from models.pid_lstm import LSTMAdaptivePID
 from models.sys_rbf import SystemRBFModel
 from utils.run import run_episode
@@ -29,7 +29,7 @@ def build(steps: int = 60):
     )
     pid = PID(torch.tensor(5.0), torch.tensor(0.5), torch.tensor(1.0))
     pid.set_limits(torch.tensor(50.0), torch.tensor(-50.0))
-    lstm = LSTMAdaptivePID(input_size=5, hidden_size=16, output_size=3)
+    lstm = LSTMAdaptivePID(input_size=N_FEATURES, hidden_size=16, output_size=3)
     rbf = SystemRBFModel(
         input_mean=torch.zeros(4),
         input_std=torch.ones(4),
@@ -46,6 +46,7 @@ def build(steps: int = 60):
         warm_up_steps=5,
         pid_gain_factor=(20.0, 2.0, 5.0),
         error_scale=10.0,
+        operating_range=(-10.0, 10.0),
     )
     return system, pid, lstm, rbf, config
 
