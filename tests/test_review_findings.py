@@ -216,3 +216,43 @@ def test_training_without_a_network_fails_before_simulating():
             rbf_model=rbf, lstm_model=None, session="train",
             optimizer=torch.optim.SGD(rbf.parameters(), lr=0.0),
         )
+
+
+def test_a_constant_schedule_reproduces_those_constant_gains():
+    """The schedule family contains the constant family, so a table with every
+    bin set to the same gains must score exactly as those gains do.
+
+    It did not: the schedule arm ran through the network path, which holds the
+    *initial* gains during warm-up, while the constant arm applied its own from
+    step 0. That made a strictly larger search space score worse than a point
+    inside it, which is impossible and made the measured benefit of scheduling
+    come out negative.
+    """
+    import numpy as np
+
+    from comparisons.baselines import ScheduledGains
+    from comparisons.compare import Arm, episode_cost, run_arm
+    from learning.scenarios import make_episode
+    from utils import save_load
+
+    config = load_config("trolley")
+    dt = config.learning.dt
+    steps = 400
+    episode = make_episode(config.scenario, steps, dt, np.random.default_rng(0))
+    rbf = save_load.load_rbf_model("sys_rbf_trolley.pth")
+
+    gains = (12.0, 20.0, 5.0)
+    ceiling = config.control.gain_ceiling
+    table = np.tile([g / c for g, c in zip(gains, ceiling, strict=True)], (3, 1))
+
+    constant = episode_cost(
+        run_arm(Arm(name="c", gains=gains), config, rbf, episode, True), dt
+    )
+    scheduled = episode_cost(
+        run_arm(
+            Arm(name="s", gains=None, lstm=ScheduledGains(table), warm_up_steps=0),
+            config, rbf, episode, True,
+        ),
+        dt,
+    )
+    assert scheduled == pytest.approx(constant, rel=1e-4)

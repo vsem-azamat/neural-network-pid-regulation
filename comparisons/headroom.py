@@ -118,7 +118,15 @@ def main(system_name: str, seed: int, runs: int, iterations: int,
     schedule_costs = []
     for index, episode in enumerate(episodes):
         def scheduled_cost(table, e=episode) -> float:
-            arm = Arm(name="sched", gains=None, lstm=baselines.ScheduledGains(table))
+            # No hidden state to prime, so no warm-up: with one, a schedule
+            # seeded from a constant would not reproduce that constant and the
+            # measured "benefit of scheduling" could come out negative.
+            arm = Arm(
+                name="sched",
+                gains=None,
+                lstm=baselines.ScheduledGains(table),
+                warm_up_steps=0,
+            )
             return episode_cost(
                 run_arm(arm, config, rbf_model, e, with_disturbance=True), dt
             )

@@ -53,11 +53,26 @@ class Arm:
     gains: tuple[float, float, float] | None  # None = gains come from the LSTM
     lstm: torch.nn.Module | None = None
     per_episode_gains: bool = False  # recompute gains from each episode's plant
+    warm_up_steps: int | None = None  # override; see build_simulation_config
 
 
 def build_simulation_config(
-    config: ConfigPack, episode: Episode, with_disturbance: bool
+    config: ConfigPack,
+    episode: Episode,
+    with_disturbance: bool,
+    warm_up_steps: int | None = None,
 ) -> SimulationConfig:
+    """Assemble the episode's simulation configuration.
+
+    ``warm_up_steps`` exists because the warm-up is not neutral between arms. A
+    controller driven through the network path holds the *initial* gains for the
+    first ``warm_up_steps`` samples, while a constant-gain arm applies its own
+    gains from step 0. A recurrent network needs that period to build a hidden
+    state, but a memoryless lookup table does not — and giving it one makes a
+    schedule seeded with a constant *not* equal to that constant, so the schedule
+    family stops containing the constant family and a strictly larger search
+    space can score worse. Arms with no state to prime pass 0.
+    """
     lstm = config.learning.lstm
     return SimulationConfig(
         setpoints=episode.setpoints,
@@ -65,7 +80,9 @@ def build_simulation_config(
         dt=torch.tensor(config.learning.dt),
         sequence_length=lstm.sequence_length,
         tbptt_window=lstm.tbptt_window,
-        warm_up_steps=lstm.warm_up_steps,
+        warm_up_steps=(
+            lstm.warm_up_steps if warm_up_steps is None else warm_up_steps
+        ),
         pid_gain_factor=config.control.gain_ceiling,
         error_scale=config.control.error_scale,
         operating_range=config.scenario.setpoint.as_tuple(),
@@ -99,7 +116,9 @@ def run_arm(
     return run_episode(
         system=system,
         pid=pid,
-        simulation_config=build_simulation_config(config, episode, with_disturbance),
+        simulation_config=build_simulation_config(
+            config, episode, with_disturbance, arm.warm_up_steps
+        ),
         extract_rbf_input=EXTRACTORS[config.plant],
         extract_lstm_input=extract_lstm_input,
         rbf_model=rbf_model,
