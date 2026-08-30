@@ -1,0 +1,79 @@
+# Trolley with a hardening spring and dry friction.
+#
+# Same plant class as trolley.yml, made nonlinear. This is the study that asks
+# whether gain scheduling is worth having, on a problem where it should be:
+#
+#   * Local stiffness is k + 3*k3*x^2. With k=1 and k3=0.02 the plant is 14x
+#     stiffer at x=15 m than at the origin and its natural frequency nearly
+#     quadruples, so the gains that suit small moves are wrong for large ones.
+#   * Coulomb friction puts a break-away force in the loop: the gain needed to
+#     get moving is larger than the gain that keeps the loop damped once moving.
+#
+# dt is 0.02 s rather than 0.05: min_dt() falls to ~0.07 s at the stiff end of
+# the travel, and the check in run_episode is now made at the operating
+# amplitude rather than at the origin.
+plant: trolley
+
+learning:
+  dt: 0.02
+
+  lstm:
+    train_time: 40.0
+    num_epochs: 80
+    sequence_length: 1
+    tbptt_window: 25
+    warm_up_steps: 25
+    grad_clip: 1.0
+    loss_target: plant
+    overshoot_weight: 0.5
+    effort_weight: 0.05
+    optimizer:
+      name: adam
+      lr: 0.003
+    scheduler:
+      gamma: 0.98
+    model:
+      hidden_size: 48
+      num_layers: 1
+
+  rbf:
+    num_epochs: 400
+    batch_size: 128
+    lr: 0.005
+    num_trajectories: 300
+    trajectory_steps: 150
+    validation_split: 0.2
+    model:
+      hidden_size: 80
+
+control:
+  output_min: -50.0
+  output_max: 50.0
+  # Pole placement on the *linearised-at-the-origin* plant. It is the honest
+  # classical starting point: a tuning rule has no way to know the stiffness
+  # changes with position.
+  initial_gains: [9.4, 8.0, 4.7]
+  gain_ceiling: [60.0, 80.0, 25.0]
+  error_scale: 10.0
+  tuning_step_input: 10.0
+
+scenario:
+  setpoint:
+    low: -15.0
+    high: 15.0
+  segment_time:
+    low: 4.0
+    high: 10.0
+  disturbance_scale: 8.0
+  disturbance_hold: 2.0
+  randomize_plant:
+    mass:     {low: 0.7, high: 1.6}
+    spring:   {low: 0.6, high: 2.5}
+    friction: {low: 0.2, high: 1.2}
+
+system:
+  mass: 1.0
+  spring: 1.0
+  friction: 0.5
+  spring_cubic: 0.02
+  coulomb_friction: 2.0

@@ -40,7 +40,7 @@ def test_step_test_is_long_enough_to_identify_the_plant(system_name):
     settled, so K and T come out low and a dead time appears that is not there,
     which sent IMC to Kp=227, Kd=553 instead of Kp=100, Kd=0."""
     config = load_config(system_name)
-    system = build_system(system_name, config)
+    system = build_system(config)
     steps = tuning.step_test_steps(system)
 
     _, response = system.step_response(steps=steps, final_input=1.0)
@@ -54,7 +54,7 @@ def test_step_test_is_long_enough_to_identify_the_plant(system_name):
 
 def test_thermal_classical_tuning_recovers_a_pi_controller():
     config = load_config("thermal")
-    system = build_system("thermal", config)
+    system = build_system(config)
     Kp, Ki, Kd = baselines.classical(system, config).gains
     assert Kp == pytest.approx(100.0, rel=0.1)
     assert Kd == 0.0, "a first-order plant with no dead time needs no derivative"
@@ -65,7 +65,7 @@ def test_configured_initial_gains_match_what_the_tuner_returns(system_name):
     """The warm start is documented as starting at the classical gains, which is
     only true if the config and the tuner agree."""
     config = load_config(system_name)
-    system = build_system(system_name, config)
+    system = build_system(config)
     tuned = baselines.classical(system, config).gains
     for name, configured, actual in zip(
         ("Kp", "Ki", "Kd"), config.control.initial_gains, tuned, strict=True
@@ -168,7 +168,7 @@ def test_training_without_a_network_fails_before_simulating():
     from utils.run import run_episode
 
     config = load_config("trolley")
-    system = build_system("trolley", config)
+    system = build_system(config)
     pid = PID(torch.tensor(1.0), torch.tensor(0.0), torch.tensor(0.0))
     rbf = SystemRBFModel(
         input_mean=torch.zeros(4), input_std=torch.ones(4),

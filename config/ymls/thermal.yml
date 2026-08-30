@@ -3,6 +3,8 @@
 # tau = C/h = 100 s for the nominal plant, so min_dt is far larger than any
 # sensible sample time; dt is set by the control bandwidth we want, not by
 # stability.
+plant: thermal
+
 learning:
   dt: 0.5
 

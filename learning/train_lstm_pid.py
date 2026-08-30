@@ -22,7 +22,7 @@ import torch
 from torch import optim
 
 from classes.simulation import SimulationConfig
-from config import cnfg, load_config
+from config import available_studies, cnfg, load_config
 from config.models import ConfigPack
 from entities.pid import PID
 from learning.scenarios import Episode, build_system, make_episode
@@ -73,7 +73,6 @@ def build_simulation_config(
 
 
 def evaluate(
-    system_name: str,
     config: ConfigPack,
     lstm_model: torch.nn.Module | None,
     rbf_model: torch.nn.Module,
@@ -92,11 +91,11 @@ def evaluate(
     are where the step-response shape metrics are readable. Reporting one number
     for both protocols at once is how a comparison ends up with a column of NaN.
     """
-    extract_rbf = EXTRACTORS[system_name]
+    extract_rbf = EXTRACTORS[config.plant]
     per_episode = []
 
     for episode in episodes:
-        system = build_system(system_name, config, episode.plant_parameters)
+        system = build_system(config, episode.plant_parameters)
         pid = build_pid(config)
         system.reset()
         pid.reset()
@@ -182,7 +181,7 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
     lstm_config = config.learning.lstm
     num_epochs = epochs if epochs is not None else lstm_config.num_epochs
     steps = int(lstm_config.train_time / config.learning.dt)
-    extract_rbf = EXTRACTORS[system_name]
+    extract_rbf = EXTRACTORS[config.plant]
 
     rbf_model = save_load.load_rbf_model(f"sys_rbf_{system_name}.pth")
     for parameter in rbf_model.parameters():
@@ -235,7 +234,7 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
         rng = np.random.default_rng(TRAIN_SEED_BASE + seed + epoch)
         episode = make_episode(config.scenario, steps, config.learning.dt, rng)
 
-        system = build_system(system_name, config, episode.plant_parameters)
+        system = build_system(config, episode.plant_parameters)
         pid = build_pid(config)
         system.reset()
         pid.reset()
@@ -285,10 +284,10 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
     for name, disturbed in (("tracking", False), ("rejection", True)):
         protocols[name] = {
             "fixed_gain": evaluate(
-                system_name, config, None, rbf_model, eval_episodes, disturbed
+                config, None, rbf_model, eval_episodes, disturbed
             ),
             "lstm_scheduled": evaluate(
-                system_name, config, lstm_model, rbf_model, eval_episodes, disturbed
+                config, lstm_model, rbf_model, eval_episodes, disturbed
             ),
         }
         report_table(name, protocols[name])
@@ -297,7 +296,7 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
     # plant under the trained controller.
     probe = eval_episodes[0]
     probe_results = run_episode(
-        system=build_system(system_name, config, probe.plant_parameters),
+        system=build_system(config, probe.plant_parameters),
         pid=build_pid(config),
         simulation_config=build_simulation_config(config, probe),
         extract_rbf_input=extract_rbf,
@@ -328,7 +327,7 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("system", choices=["trolley", "thermal"])
+    parser.add_argument("system", choices=available_studies())
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--show", action="store_true")

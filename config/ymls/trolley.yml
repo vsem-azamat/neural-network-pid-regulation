@@ -1,9 +1,11 @@
-# Mass-spring-damper trolley: second-order, oscillatory.
+# Mass-spring-damper trolley: second-order, oscillatory, LINEAR.
 #
 # dt is chosen against Trolley.min_dt(): omega_n = sqrt(k/m) = 1 rad/s for the
 # nominal plant, so the Nyquist-with-oversampling bound is pi/10 ~ 0.31 s. The
 # randomised range reaches k/m = 4 (omega_n = 2), which halves that bound, so
 # 0.05 s leaves headroom across the whole randomisation range.
+plant: trolley
+
 learning:
   dt: 0.05
 

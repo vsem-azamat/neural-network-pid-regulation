@@ -39,7 +39,7 @@ import numpy as np
 
 from comparisons import baselines
 from comparisons.compare import Arm, episode_cost, run_arm
-from config import cnfg, load_config
+from config import available_studies, cnfg, load_config
 from learning.scenarios import make_episode
 from models.pid_lstm import LSTMAdaptivePID
 from utils import save_load
@@ -68,10 +68,8 @@ def main(system_name: str, seed: int, runs: int, iterations: int) -> None:
     episodes = [make_episode(config.scenario, steps, dt, rng) for _ in range(runs)]
 
     def cost(gains, episode) -> float:
-        results = run_arm(
-            Arm(name="probe", gains=gains),
-            system_name, config, rbf_model, episode, with_disturbance=True,
-        )
+        arm = Arm(name="probe", gains=gains)
+        results = run_arm(arm, config, rbf_model, episode, with_disturbance=True)
         return episode_cost(results, dt)
 
     # ── 1. one constant for the whole distribution ──────────────────────
@@ -102,12 +100,10 @@ def main(system_name: str, seed: int, runs: int, iterations: int) -> None:
               f"(global constant: {global_costs[index]:9.3f})")
 
     # ── 3. the trained scheduler ────────────────────────────────────────
+    scheduler_arm = Arm(name="lstm", gains=None, lstm=lstm_model)
     lstm_costs = [
         episode_cost(
-            run_arm(
-                Arm(name="lstm", gains=None, lstm=lstm_model),
-                system_name, config, rbf_model, episode, True,
-            ),
+            run_arm(scheduler_arm, config, rbf_model, episode, True),
             dt,
         )
         for episode in episodes
@@ -164,7 +160,7 @@ def main(system_name: str, seed: int, runs: int, iterations: int) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("system", choices=["trolley", "thermal"])
+    parser.add_argument("system", choices=available_studies())
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--runs", type=int, default=10)
     parser.add_argument("--iterations", type=int, default=120)

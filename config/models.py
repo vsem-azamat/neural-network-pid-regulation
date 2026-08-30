@@ -128,6 +128,14 @@ class LearningConfig(BaseModel):
 
 
 class ConfigPack(BaseModel):
+    """One study: a plant, how it is driven, and how the controller is trained.
+
+    ``plant`` names the *dynamics class*, separately from the name of the config
+    file. That lets a linear and a nonlinear study of the same plant live side by
+    side and be compared, which is the whole point of having both.
+    """
+
+    plant: Literal["trolley", "thermal"]
     learning: LearningConfig
     control: ControlConfig
     scenario: ScenarioConfig

@@ -9,12 +9,21 @@ ROOM_TEMPERATURE = torch.tensor(293.15)  # 20 °C in kelvin
 
 
 class Thermal(BaseSystem):
-    """C·dT/dt = Q + d − h·(T − T_amb)
+    """C·dT/dt = Q + d − h·(T − T_amb) − σ·(T⁴ − T_amb⁴)
 
     Newton's law of cooling is written against the *ambient* temperature.  The
     earlier form, ``C·dT/dt = Q − h·T``, exchanges heat with 0 K instead: it
     needs 4 kW just to hold 400 K, and with the heater off it drives the plant
     towards absolute zero rather than towards room temperature.
+
+    The optional radiative term (Stefan–Boltzmann, ``radiative_coefficient``)
+    defaults to zero, which recovers the linear plant. Switched on, it is what
+    makes this plant a genuine gain-scheduling problem: radiation contributes an
+    effective loss coefficient of 4σT³, so the plant's time constant shrinks
+    sharply as it heats up. Between 300 K and 500 K the total loss coefficient
+    changes several-fold, and a controller tuned at one end is badly detuned at
+    the other. This is the textbook industrial reason to schedule gains on
+    temperature.
     """
 
     def __init__(
@@ -24,6 +33,7 @@ class Thermal(BaseSystem):
         dt: Tensor,
         initial_temperature: Tensor = ROOM_TEMPERATURE,
         ambient_temperature: Tensor | None = None,
+        radiative_coefficient: Tensor | float = 0.0,
     ) -> None:
         """
         Args:
@@ -33,6 +43,8 @@ class Thermal(BaseSystem):
             initial_temperature: Starting temperature, K.
             ambient_temperature: Environment temperature, K. Defaults to the
                 initial temperature, i.e. the plant starts at equilibrium.
+            radiative_coefficient: Effective εσA for the radiative loss, W/K⁴.
+                Zero gives a purely linear plant.
         """
         self.thermal_capacity = torch.as_tensor(thermal_capacity, dtype=torch.float32)
         self.heat_transfer_coefficient = torch.as_tensor(
@@ -48,6 +60,10 @@ class Thermal(BaseSystem):
             else torch.as_tensor(ambient_temperature, dtype=torch.float32)
         )
 
+        self.radiative_coefficient = torch.as_tensor(
+            radiative_coefficient, dtype=torch.float32
+        )
+
         self.temperature = self.initial_temperature.clone()
         self.temp_derivative = torch.tensor(0.0)
 
@@ -58,6 +74,10 @@ class Thermal(BaseSystem):
         heat_loss = self.heat_transfer_coefficient * (
             self.temperature - self.ambient_temperature
         )
+        if float(self.radiative_coefficient) != 0.0:
+            heat_loss = heat_loss + self.radiative_coefficient * (
+                self.temperature**4 - self.ambient_temperature**4
+            )
         self.temp_derivative = (
             control_output + disturbance - heat_loss
         ) / self.thermal_capacity
@@ -84,17 +104,41 @@ class Thermal(BaseSystem):
     def d2XdT2(self) -> Tensor:
         return torch.tensor(0.0)
 
-    def min_dt(self, oversampling_factor: float = 10.0) -> Tensor:
-        """Sampling step that resolves the plant's time constant τ = C/h."""
-        tau = self.thermal_capacity / self.heat_transfer_coefficient
+    def min_dt(
+        self, oversampling_factor: float = 10.0, amplitude: float = 0.0
+    ) -> Tensor:
+        """Sampling step that resolves the plant's time constant τ = C/h_eff.
+
+        ``amplitude`` is read as an operating temperature when it is non-zero,
+        because the radiative plant's time constant depends on it.
+        """
+        if amplitude:
+            tau = self.thermal_capacity / self.effective_loss_coefficient(amplitude)
+            return torch.min(
+                torch.pi * tau / oversampling_factor, 2.0 * tau
+            )
+        tau = self.thermal_capacity / self.effective_loss_coefficient()
         nyquist_dt = torch.pi * tau / oversampling_factor
         max_stable_dt = 2.0 * tau
         return torch.min(nyquist_dt, max_stable_dt)
 
+    def effective_loss_coefficient(self, temperature: float | None = None) -> Tensor:
+        """dQ_loss/dT at a given temperature: h + 4σT³.
+
+        This is the plant's local gain, and on the radiative plant it is a strong
+        function of where the plant is operating.
+        """
+        T = self.temperature if temperature is None else torch.tensor(float(temperature))
+        return self.heat_transfer_coefficient + 4.0 * self.radiative_coefficient * T**3
+
     @property
     def tau(self) -> Tensor:
-        """Open-loop time constant, s."""
-        return self.thermal_capacity / self.heat_transfer_coefficient
+        """Open-loop time constant at the current temperature, s."""
+        return self.thermal_capacity / self.effective_loss_coefficient()
+
+    @property
+    def is_nonlinear(self) -> bool:
+        return float(self.radiative_coefficient) != 0.0
 
     @property
     def steady_state_power(self) -> Tensor:

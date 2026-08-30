@@ -54,7 +54,6 @@ def randomise_initial_state(
 
 
 def collect_trajectories(
-    system_name: str,
     config: ConfigPack,
     rng: np.random.Generator,
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -75,7 +74,7 @@ def collect_trajectories(
             name: float(rng.uniform(*bounds.as_tuple()))
             for name, bounds in config.scenario.randomize_plant.items()
         }
-        system = build_system(system_name, config, overrides)
+        system = build_system(config, overrides)
         system.reset()
         # Start each trajectory somewhere in the operating range rather than
         # always from equilibrium. Without this the dataset only covers the part

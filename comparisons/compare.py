@@ -28,7 +28,7 @@ import torch
 
 from classes.simulation import SimulationConfig, SimulationResults
 from comparisons import baselines
-from config import cnfg, load_config
+from config import available_studies, cnfg, load_config
 from config.models import ConfigPack
 from entities.pid import PID
 from learning.scenarios import Episode, build_system, make_episode
@@ -73,14 +73,13 @@ def build_simulation_config(
 
 def run_arm(
     arm: Arm,
-    system_name: str,
     config: ConfigPack,
     rbf_model: torch.nn.Module,
     episode: Episode,
     with_disturbance: bool,
 ) -> SimulationResults:
     """Run one controller on one episode, from a guaranteed-clean state."""
-    system = build_system(system_name, config, episode.plant_parameters)
+    system = build_system(config, episode.plant_parameters)
     system.reset()
 
     if arm.per_episode_gains:
@@ -100,7 +99,7 @@ def run_arm(
         system=system,
         pid=pid,
         simulation_config=build_simulation_config(config, episode, with_disturbance),
-        extract_rbf_input=EXTRACTORS[system_name],
+        extract_rbf_input=EXTRACTORS[config.plant],
         extract_lstm_input=extract_lstm_input,
         rbf_model=rbf_model,
         lstm_model=arm.lstm,
@@ -219,7 +218,7 @@ def main(system_name: str, seed: int, runs: int, show: bool) -> None:
     ]
 
     # ── baselines ───────────────────────────────────────────────────────
-    nominal = build_system(system_name, config)
+    nominal = build_system(config)
     classical = baselines.classical(nominal, config)
     print(
         f"Classical tuning ({classical.name}): "
@@ -236,7 +235,7 @@ def main(system_name: str, seed: int, runs: int, show: bool) -> None:
         arm = Arm(name="search", gains=gains)
         return baselines.mean_objective(
             episode_cost(
-                run_arm(arm, system_name, config, rbf_model, episode, True), dt
+                run_arm(arm, config, rbf_model, episode, True), dt
             )
             for episode in tune_episodes
         )
@@ -267,7 +266,7 @@ def main(system_name: str, seed: int, runs: int, show: bool) -> None:
             scores = []
             for index, episode in enumerate(eval_episodes):
                 results = run_arm(
-                    arm, system_name, config, rbf_model, episode, with_disturbance
+                    arm, config, rbf_model, episode, with_disturbance
                 )
                 scores.append(score_final_step(results, dt))
                 if index == 0:
@@ -300,7 +299,7 @@ def main(system_name: str, seed: int, runs: int, show: bool) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("system", choices=["trolley", "thermal"])
+    parser.add_argument("system", choices=available_studies())
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--runs", type=int, default=30)
     parser.add_argument("--show", action="store_true")

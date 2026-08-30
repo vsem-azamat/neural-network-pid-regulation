@@ -21,7 +21,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from config import cnfg, load_config
+from config import available_studies, cnfg, load_config
 from entities.systems import BaseSystem, Thermal, Trolley
 from learning.scenarios import build_system
 from utils.seeding import DEFAULT_SEED, seed_everything
@@ -64,7 +64,7 @@ def describe(system: BaseSystem) -> str:
 def main(system_name: str, seed: int, show: bool) -> None:
     seed_everything(seed)
     config = load_config(system_name)
-    system = build_system(system_name, config)
+    system = build_system(config)
 
     amplitude = config.control.tuning_step_input
     duration = 60.0 if system_name == "trolley" else 1200.0
@@ -150,7 +150,7 @@ def main(system_name: str, seed: int, show: bool) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("system", choices=["trolley", "thermal"])
+    parser.add_argument("system", choices=available_studies())
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--show", action="store_true")
     args = parser.parse_args()

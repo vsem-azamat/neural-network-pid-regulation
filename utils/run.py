@@ -175,10 +175,20 @@ def run_episode(
         raise ValueError("A training session needs an LSTM model to train.")
 
     dt = torch.as_tensor(simulation_config.dt, dtype=torch.float32)
-    max_dt = system.min_dt()
+    # Check the step size where the loop will actually operate, not at the
+    # origin: a nonlinear plant can be several times faster out at its setpoints
+    # than it is at rest, and a check at rest would pass a step that is far too
+    # large everywhere it matters. 1.3x leaves room for overshoot.
+    magnitudes = (
+        abs(float(torch.as_tensor(sp).reshape(-1)[0]))
+        for sp in simulation_config.setpoints
+    )
+    operating_amplitude = 1.3 * max(magnitudes, default=0.0)
+    max_dt = system.min_dt(amplitude=operating_amplitude)
     if not bool(dt < max_dt):
         raise ValueError(
-            f"Time step {float(dt):.4g}s is too large for this plant "
+            f"Time step {float(dt):.4g}s is too large for this plant at an "
+            f"operating amplitude of {operating_amplitude:.3g} "
             f"(needs < {float(max_dt):.4g}s) — the integration would not resolve "
             "its dynamics."
         )

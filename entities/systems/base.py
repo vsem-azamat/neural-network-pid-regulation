@@ -51,12 +51,19 @@ class BaseSystem(ABC):
         """Drop autograd history while keeping the numeric state."""
 
     @abstractmethod
-    def min_dt(self, oversampling_factor: float = 10.0) -> Tensor:
+    def min_dt(
+        self, oversampling_factor: float = 10.0, amplitude: float = 0.0
+    ) -> Tensor:
         """Largest time step that still resolves the plant's own dynamics.
 
         Defined as a method rather than a property so ``oversampling_factor``
         can actually be supplied — as a property the argument was unreachable
         and the factor was permanently pinned at its default.
+
+        ``amplitude`` is the displacement the loop will actually operate over.
+        It matters on a nonlinear plant that gets faster the further it travels:
+        a step size checked only at the origin can be far too large in the
+        region the controller works in.
         """
 
     @property

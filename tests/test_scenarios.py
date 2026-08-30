@@ -99,7 +99,7 @@ def test_same_seed_reproduces_the_same_episode(config):
 def test_built_plant_uses_the_episode_parameters(config):
     name, cfg = config
     episode = build(name, cfg, seed=3)
-    system = build_system(name, cfg, episode.plant_parameters)
+    system = build_system(cfg, episode.plant_parameters)
     for key, value in episode.plant_parameters.items():
         assert float(getattr(system, key)) == pytest.approx(value)
 
@@ -111,7 +111,7 @@ def test_configured_dt_resolves_the_plant_dynamics(config):
         cfg.scenario, episode_steps(cfg), cfg.learning.dt, 20, seed=4
     )
     for episode in stream:
-        system = build_system(name, cfg, episode.plant_parameters)
+        system = build_system(cfg, episode.plant_parameters)
         assert cfg.learning.dt < float(system.min_dt()), (
             f"dt={cfg.learning.dt} too large for {episode.plant_parameters}"
         )
