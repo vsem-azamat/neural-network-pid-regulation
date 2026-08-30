@@ -9,7 +9,14 @@ learning:
   lstm:
     train_time: 600.0
     num_epochs: 60
-    sequence_length: 40
+    # One sample per step: the memory lives in the LSTM's hidden state, which
+    # is what a recurrent network is for. A 40-sample window made the carried
+    # hidden state change the predicted gains by exactly 0.0 - the window already
+    # held everything it could remember - so the loop paid 40x the work per
+    # control step for a recurrence that was doing nothing.
+    # tests/test_review_findings.py fails if this window grows back past the
+    # point where the hidden state stops mattering.
+    sequence_length: 1
     tbptt_window: 20
     warm_up_steps: 20
     grad_clip: 1.0
@@ -40,8 +47,10 @@ control:
   # ambient on its own, which is what brings the temperature back down.
   output_min: 0.0
   output_max: 4000.0
-  # IMC tuning for the nominal plant (see utils/tuning.py).
-  initial_gains: [105.2, 0.56, 0.0]
+  # IMC tuning for the nominal plant, as `tuning.tune(..., "auto")` returns it.
+  # Kept in sync with the tuner: the warm start claims to begin at the classical
+  # gains, which is only true if these are the classical gains.
+  initial_gains: [100.0, 1.01, 0.0]
   gain_ceiling: [300.0, 4.0, 20.0]
   error_scale: 30.0
   tuning_step_input: 1000.0

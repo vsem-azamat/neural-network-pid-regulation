@@ -10,7 +10,14 @@ learning:
   lstm:
     train_time: 40.0
     num_epochs: 60
-    sequence_length: 40
+    # One sample per step: the memory lives in the LSTM's hidden state, which
+    # is what a recurrent network is for. A 40-sample window made the carried
+    # hidden state change the predicted gains by exactly 0.0 - the window already
+    # held everything it could remember - so the loop paid 40x the work per
+    # control step for a recurrence that was doing nothing.
+    # tests/test_review_findings.py fails if this window grows back past the
+    # point where the hidden state stops mattering.
+    sequence_length: 1
     tbptt_window: 20
     warm_up_steps: 20
     grad_clip: 1.0

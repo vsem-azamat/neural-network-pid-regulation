@@ -42,10 +42,20 @@ class Baseline:
 
 
 def classical(system: BaseSystem, config: ConfigPack, method: str = "auto") -> Baseline:
+    """Tune on the nominal plant, with a step test long enough to be valid.
+
+    The test length has to come from the plant's own time scale. A fixed 600
+    samples is only 3τ on the thermal plant: the response has not reached its
+    final value, so the identified gain and time constant are both low and a
+    spurious 5 s "dead time" appears — enough to survive the negligible-dead-time
+    filter and send IMC down its dead-time branch, which returned
+    Kp=227, Kd=553 instead of Kp=100, Kd=0. The classical baseline was being
+    made to look bad by the measurement, not by the method.
+    """
     gains = tuning.tune(
         system,
         method,  # type: ignore[arg-type]
-        steps=600,
+        steps=tuning.step_test_steps(system),
         step_input=config.control.tuning_step_input,
     )
     return Baseline(

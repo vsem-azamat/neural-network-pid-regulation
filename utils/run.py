@@ -100,9 +100,20 @@ def tracking_loss(
     window = results.setpoints[window_start:window_end]
     reference = torch.stack([torch.as_tensor(s).reshape(-1)[0] for s in window])
 
-    error = (predicted - reference) / max(abs(config.error_scale), 1e-6)
+    scale = max(abs(config.error_scale), 1e-6)
+    error = (predicted - reference) / scale
 
-    loss = torch.mean(error**2) + overshoot_weight * torch.mean(torch.relu(error))
+    # Overshoot means going *past* the setpoint, which is "above" it on a rising
+    # step and "below" it on a falling one. relu(predicted - reference) only ever
+    # penalises the first, so on a falling step it rewards the overshoot and
+    # penalises the approach - biasing the optimum towards a steady-state offset
+    # on the near side. Roughly half of the reference changes here are falling.
+    # This is the same sign bug the old metrics had, in the loss instead.
+    approach = (reference - predicted[0].detach()).sign()
+    approach = torch.where(approach == 0, torch.ones_like(approach), approach)
+    beyond_setpoint = torch.relu(approach * (predicted - reference) / scale)
+
+    loss = torch.mean(error**2) + overshoot_weight * torch.mean(beyond_setpoint)
 
     if effort_weight:
         controls = torch.stack(results.control_outputs[window_start:window_end])
@@ -158,6 +169,10 @@ def run_episode(
         raise ValueError("Optimizer must be provided for a training session.")
     if session == "static" and lstm_model is not None:
         raise ValueError("A static session must not be given an LSTM model.")
+    if session == "train" and lstm_model is None:
+        # Without this the run only fails at the first TBPTT boundary, after a
+        # whole episode has been simulated.
+        raise ValueError("A training session needs an LSTM model to train.")
 
     dt = torch.as_tensor(simulation_config.dt, dtype=torch.float32)
     max_dt = system.min_dt()
@@ -187,11 +202,20 @@ def run_episode(
             ).reshape(-1)[0]
 
             # ── controller gains ─────────────────────────────────────────
-            if lstm_model is not None and step >= simulation_config.warm_up_steps:
+            if lstm_model is not None:
                 lstm_input = extract_lstm_input(simulation_config, results)
-                normalised_gains, hidden = lstm_model(lstm_input, hidden)
-                kp, ki, kd = normalised_gains[0] * gain_scale
-                pid.update_gains(kp, ki, kd)
+                if step >= simulation_config.warm_up_steps:
+                    normalised_gains, hidden = lstm_model(lstm_input, hidden)
+                    kp, ki, kd = normalised_gains[0] * gain_scale
+                    pid.update_gains(kp, ki, kd)
+                else:
+                    # Prime the recurrent state during warm-up without acting on
+                    # its output. With a short input window the hidden state *is*
+                    # the network's memory, so handing it control cold would mean
+                    # its first decision is made with no history at all.
+                    with torch.no_grad():
+                        _, hidden = lstm_model(lstm_input, hidden)
+                    kp, ki, kd = pid.gains
             else:
                 kp, ki, kd = pid.gains
 

@@ -30,7 +30,19 @@ N_FEATURES = 5
 def extract_lstm_input(
     simulation_config: SimulationConfig, results: SimulationResults
 ) -> Tensor:
-    """Return a ``(1, sequence_length, N_FEATURES)`` window, zero-padded at the start."""
+    """Return a ``(1, sequence_length, N_FEATURES)`` window, zero-padded at the start.
+
+    ``sequence_length`` trades off against the recurrence, and running both at
+    once is waste: with a 40-sample window the carried hidden state changes the
+    predicted gains by 0.0 (max 6e-8 over 200 steps), because the window already
+    contains everything the hidden state could remember. That is 40x the work per
+    control step for no effect, and it means the LSTM is not really being used as
+    one.
+
+    Short windows put the memory back in the hidden state, where a recurrent
+    network's memory belongs, and truncated BPTT still propagates gradients
+    through it across the whole window.
+    """
     length = simulation_config.sequence_length
     window = torch.zeros(length, N_FEATURES)
 
