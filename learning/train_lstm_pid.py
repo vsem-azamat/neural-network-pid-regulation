@@ -13,6 +13,7 @@ episodes, so "did training help?" is answered by numbers rather than by eye.
 """
 
 import argparse
+import copy
 import json
 from dataclasses import dataclass
 from functools import partial
@@ -37,6 +38,7 @@ from utils.run import run_episode, surrogate_health, tracking_loss
 from utils.seeding import DEFAULT_SEED, seed_everything
 
 TRAIN_SEED_BASE = 10_000
+VAL_SEED_BASE = 60_000  # checkpoint selection; disjoint from both of the others
 EVAL_SEED_BASE = 90_000  # disjoint from training, so evaluation is held out
 
 
@@ -46,6 +48,43 @@ class EpochRecord:
     loss: float
     grad_norm: float
     tracking_iae: float
+    validation_iae: float | None = None
+
+
+def validation_iae(
+    config: ConfigPack,
+    lstm_model: torch.nn.Module,
+    rbf_model: torch.nn.Module,
+    episodes: list[Episode],
+    gains: tuple[float, float, float],
+) -> float:
+    """Mean whole-episode IAE across the validation episodes.
+
+    The same objective the fixed-gain search minimises, so "is this
+    checkpoint better than the baseline?" is asked in the baseline's own
+    terms.
+    """
+    extract_rbf = EXTRACTORS[config.plant]
+    dt = float(config.learning.dt)
+    scores = []
+    for episode in episodes:
+        system = build_system(config, episode.plant_parameters)
+        pid = build_pid(config, gains)
+        system.reset()
+        pid.reset()
+        results = run_episode(
+            system=system,
+            pid=pid,
+            simulation_config=build_simulation_config(config, episode),
+            extract_rbf_input=extract_rbf,
+            extract_lstm_input=extract_lstm_input,
+            rbf_model=rbf_model,
+            lstm_model=lstm_model,
+            session="validation",
+        ).results
+        errors = np.abs(np.array(results.as_floats("error_history")))
+        scores.append(float(np.trapezoid(errors, dx=dt)))
+    return float(np.mean(scores))
 
 
 def build_pid(
@@ -241,9 +280,34 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
         for _ in range(12)
     ]
 
+    # Validation episodes for checkpoint selection: disjoint from the training
+    # stream and from the final evaluation set, so selecting on them biases
+    # neither.
+    val_rng = np.random.default_rng(VAL_SEED_BASE + seed)
+    val_episodes = [
+        make_episode(config.scenario, steps, config.learning.dt, val_rng)
+        for _ in range(6)
+    ]
+    val_interval = 5
+
     print(f"Training on {system_name}: {num_epochs} episodes x {steps} steps")
     print(f"  loss target: {lstm_config.loss_target}")
     history: list[EpochRecord] = []
+
+    # The untrained network is exactly the baseline controller, and it is the
+    # first checkpoint candidate. Training episodes are noisy enough that the
+    # final epoch is routinely not the best one — saving it unconditionally
+    # let a wandering network ship a controller *worse* than its own starting
+    # point, which selection against the baseline makes impossible (up to the
+    # validation/test gap).
+    lstm_model.eval()
+    best_val = validation_iae(
+        config, lstm_model, rbf_model, val_episodes, baseline_gains
+    )
+    lstm_model.train()
+    best_state = copy.deepcopy(lstm_model.state_dict())
+    best_epoch = 0
+    print(f"  validation IAE at the baseline (epoch 0): {best_val:9.2f}")
 
     for epoch in range(num_epochs):
         rng = np.random.default_rng(TRAIN_SEED_BASE + seed + epoch)
@@ -282,15 +346,39 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
             grad_norm=report.mean_grad_norm,
             tracking_iae=float(np.trapezoid(errors, dx=config.learning.dt)),
         )
+
+        if (epoch + 1) % val_interval == 0 or epoch + 1 == num_epochs:
+            lstm_model.eval()
+            record.validation_iae = validation_iae(
+                config, lstm_model, rbf_model, val_episodes, baseline_gains
+            )
+            lstm_model.train()
+            if record.validation_iae < best_val:
+                best_val = record.validation_iae
+                best_state = copy.deepcopy(lstm_model.state_dict())
+                best_epoch = epoch + 1
+
         history.append(record)
 
         if (epoch + 1) % max(1, num_epochs // 12) == 0 or epoch == 0:
+            val_note = (
+                f"  val {record.validation_iae:9.2f}"
+                if record.validation_iae is not None
+                else ""
+            )
             print(
                 f"  epoch {record.epoch:>3}/{num_epochs}  "
                 f"loss {record.loss:.5f}  |grad| {record.grad_norm:.3e}  "
-                f"IAE {record.tracking_iae:9.2f}"
+                f"IAE {record.tracking_iae:9.2f}{val_note}"
             )
 
+    lstm_model.load_state_dict(best_state)
+    if best_epoch == 0:
+        print(f"\n  Selected checkpoint: the baseline (epoch 0), val IAE "
+              f"{best_val:.2f} — no epoch improved on it.")
+    else:
+        print(f"\n  Selected checkpoint: epoch {best_epoch}, "
+              f"val IAE {best_val:.2f}")
     save_load.save_model(lstm_model, f"pid_lstm_{system_name}.pth")
 
     # ── held-out evaluation ─────────────────────────────────────────────
@@ -331,6 +419,8 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
         "loss_target": lstm_config.loss_target,
         "residual_baseline": list(baseline_gains),
         "residual_range": config.control.residual_range,
+        "selected_epoch": best_epoch,
+        "selected_validation_iae": best_val,
         "surrogate": surrogate_health(probe_results),
         "protocols": protocols,
         "history": [vars(r) for r in history],

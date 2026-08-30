@@ -28,7 +28,17 @@ def plot_training_history(
     axs[1].semilogy(epochs, [h["grad_norm"] for h in history], color="tab:red")
     axs[1].set_ylabel("|grad| (log)")
 
-    axs[2].plot(epochs, [h["tracking_iae"] for h in history], color="tab:green")
+    axs[2].plot(epochs, [h["tracking_iae"] for h in history], color="tab:green",
+                label="training episode")
+    validated = [
+        (h["epoch"], h["validation_iae"])
+        for h in history
+        if h.get("validation_iae") is not None
+    ]
+    if validated:
+        axs[2].plot(*zip(*validated, strict=True), "o-", color="tab:purple",
+                    label="validation (checkpoint selection)")
+        axs[2].legend(loc="best")
     axs[2].set_ylabel("Episode IAE")
     axs[2].set_xlabel("Episode")
 
