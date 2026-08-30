@@ -14,6 +14,7 @@ The features are dimensionless by construction:
     4  Kd / Kd_max
     5  (y − mid) / halfspan           operating point
     6  (r − mid) / halfspan           commanded operating point
+    7  u / control_scale              last control signal
 
 Feeding raw signals instead — as the original did, with absolute positions and
 setpoints — means the network sees inputs in the hundreds for the thermal plant
@@ -30,6 +31,13 @@ input at both ends of the range and must emit the same gains, so it is
 structurally incapable of scheduling however long it trains. Normalising them
 against the study's own operating range keeps them dimensionless, so one
 architecture still serves a plant in metres and a plant in kelvin.
+
+Feature 7 is the control signal as a fraction of the actuator range. Actuator
+saturation is one of the few things time-varying gains can exploit even on a
+linear plant — backing the gains off while the actuator is pinned is the whole
+trick — and none of the other features reveal it: the loop's response to a
+saturated and an unsaturated control looks identical in the error history
+until well after the fact.
 """
 
 import torch
@@ -37,7 +45,7 @@ from torch import Tensor
 
 from classes.simulation import SimulationConfig, SimulationResults
 
-N_FEATURES = 7
+N_FEATURES = 8
 
 
 def extract_lstm_input(
@@ -80,6 +88,9 @@ def extract_lstm_input(
     halfspan = simulation_config.operating_halfspan
     window[-available:, 5] = (recent("positions") - midpoint) / halfspan
     window[-available:, 6] = (recent("setpoints") - midpoint) / halfspan
+
+    control_scale = max(abs(simulation_config.control_scale), 1e-6)
+    window[-available:, 7] = recent("control_outputs") / control_scale
 
     # The window is an observation, not part of the differentiable control path:
     # gradients reach the LSTM through its *output* (the gains it sets), which is

@@ -22,6 +22,7 @@ import torch
 from torch import optim
 
 from classes.simulation import SimulationConfig
+from comparisons.compare import best_fixed_gains
 from config import available_studies, cnfg, load_config
 from config.models import ConfigPack
 from entities.pid import PID
@@ -47,9 +48,11 @@ class EpochRecord:
     tracking_iae: float
 
 
-def build_pid(config: ConfigPack) -> PID:
+def build_pid(
+    config: ConfigPack, gains: tuple[float, float, float] | None = None
+) -> PID:
     control = config.control
-    pid = PID(*(torch.tensor(g) for g in control.initial_gains))
+    pid = PID(*(torch.tensor(g) for g in (gains or control.initial_gains)))
     pid.set_limits(
         torch.tensor(control.output_max), torch.tensor(control.output_min)
     )
@@ -70,6 +73,9 @@ def build_simulation_config(
         pid_gain_factor=config.control.gain_ceiling,
         error_scale=config.control.error_scale,
         operating_range=config.scenario.setpoint.as_tuple(),
+        control_scale=max(
+            abs(config.control.output_min), abs(config.control.output_max)
+        ),
     )
 
 
@@ -79,11 +85,16 @@ def evaluate(
     rbf_model: torch.nn.Module,
     episodes: list[Episode],
     with_disturbance: bool = True,
+    gains: tuple[float, float, float] | None = None,
 ) -> dict:
     """Score a controller across held-out episodes.
 
     ``lstm_model=None`` runs the fixed-gain baseline on exactly the same
-    episodes, which is the only way the two numbers are comparable.
+    episodes, which is the only way the two numbers are comparable. ``gains``
+    sets that baseline (and the warm-up gains of the scheduler arm); the
+    training report passes the residual centre for both, so its table answers
+    the only interesting question — does the scheduler beat the constant
+    controller it started as?
 
     ``with_disturbance`` selects the protocol, and the two answer different
     questions. Under a load disturbance that keeps changing, no controller ever
@@ -97,7 +108,7 @@ def evaluate(
 
     for episode in episodes:
         system = build_system(config, episode.plant_parameters)
-        pid = build_pid(config)
+        pid = build_pid(config, gains)
         system.reset()
         pid.reset()
 
@@ -188,12 +199,11 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
     for parameter in rbf_model.parameters():
         parameter.requires_grad_(False)  # the surrogate is fixed during control training
 
-    # Warm-start at the classical gains, so training is measured by whether it
-    # improves on a competent controller rather than on a random one.
-    ceiling = config.control.gain_ceiling
-    initial_fraction = tuple(
-        g / c
-        for g, c in zip(config.control.initial_gains, ceiling, strict=True)
+    # Centre the residual scheduler on the best constant gains for this study.
+    # The untrained network then *is* the controller it will be compared
+    # against, and training can only be judged by the deviation it learns.
+    baseline_gains, baseline_iae = best_fixed_gains(
+        config, system_name, rbf_model, steps, seed
     )
     lstm_model = LSTMAdaptivePID(
         input_size=N_FEATURES,
@@ -201,10 +211,14 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
         output_size=3,
         num_layers=lstm_config.model.num_layers,
         dropout=lstm_config.model.dropout,
-        initial_gain_fraction=initial_fraction,
+        baseline_gains=baseline_gains,
+        gain_ceiling=config.control.gain_ceiling,
+        residual_range=config.control.residual_range,
     )
-    print(f"  warm start at Kp/Ki/Kd = {config.control.initial_gains} "
-          f"(fractions {tuple(round(f, 3) for f in initial_fraction)})")
+    print(f"  residual baseline Kp/Ki/Kd = "
+          f"{tuple(round(g, 2) for g in baseline_gains)} "
+          f"(search IAE {baseline_iae:.3f}), "
+          f"correction band x{config.control.residual_range}")
 
     optimizer_cls = optim.Adam if lstm_config.optimizer.name == "adam" else optim.SGD
     kwargs = (
@@ -236,7 +250,7 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
         episode = make_episode(config.scenario, steps, config.learning.dt, rng)
 
         system = build_system(config, episode.plant_parameters)
-        pid = build_pid(config)
+        pid = build_pid(config, baseline_gains)
         system.reset()
         pid.reset()
 
@@ -256,6 +270,7 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
                 target=lstm_config.loss_target,
                 overshoot_weight=lstm_config.overshoot_weight,
                 effort_weight=lstm_config.effort_weight,
+                gain_rate_weight=lstm_config.gain_rate_weight,
             ),
         )
         scheduler.step()
@@ -285,10 +300,12 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
     for name, disturbed in (("tracking", False), ("rejection", True)):
         protocols[name] = {
             "fixed_gain": evaluate(
-                config, None, rbf_model, eval_episodes, disturbed
+                config, None, rbf_model, eval_episodes, disturbed,
+                gains=baseline_gains,
             ),
             "lstm_scheduled": evaluate(
-                config, lstm_model, rbf_model, eval_episodes, disturbed
+                config, lstm_model, rbf_model, eval_episodes, disturbed,
+                gains=baseline_gains,
             ),
         }
         report_table(name, protocols[name])
@@ -298,7 +315,7 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
     probe = eval_episodes[0]
     probe_results = run_episode(
         system=build_system(config, probe.plant_parameters),
-        pid=build_pid(config),
+        pid=build_pid(config, baseline_gains),
         simulation_config=build_simulation_config(config, probe),
         extract_rbf_input=extract_rbf,
         extract_lstm_input=extract_lstm_input,
@@ -312,6 +329,8 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
         "seed": seed,
         "epochs": num_epochs,
         "loss_target": lstm_config.loss_target,
+        "residual_baseline": list(baseline_gains),
+        "residual_range": config.control.residual_range,
         "surrogate": surrogate_health(probe_results),
         "protocols": protocols,
         "history": [vars(r) for r in history],

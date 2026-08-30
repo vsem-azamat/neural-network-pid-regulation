@@ -25,6 +25,7 @@ learning:
     loss_target: plant
     overshoot_weight: 0.5
     effort_weight: 0.05
+    gain_rate_weight: 0.02
     optimizer:
       name: adam
       lr: 0.003

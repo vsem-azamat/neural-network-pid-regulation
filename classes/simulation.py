@@ -49,6 +49,10 @@ class SimulationConfig(Generic[T]):
             variable a gain schedule for a nonlinear plant has to key on.
         disturbances: Optional load disturbance per step, same units as the
             control signal.
+        control_scale: Magnitude of the actuator range, used to normalise the
+            control-signal feature fed to the LSTM. Saturation is one of the
+            few things time-varying gains can exploit even on a linear plant,
+            and without this feature the network cannot see it.
     """
 
     setpoints: list[T]
@@ -59,6 +63,7 @@ class SimulationConfig(Generic[T]):
     pid_gain_factor: float | tuple[float, float, float] = 15.0
     error_scale: float = 1.0
     operating_range: tuple[float, float] = (0.0, 1.0)
+    control_scale: float = 1.0
     disturbances: list[T] | None = None
 
     @property

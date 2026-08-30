@@ -21,6 +21,7 @@ Protocol, which is most of what makes the numbers meaningful:
 
 import argparse
 import json
+import os
 from dataclasses import dataclass
 
 import numpy as np
@@ -86,6 +87,9 @@ def build_simulation_config(
         pid_gain_factor=config.control.gain_ceiling,
         error_scale=config.control.error_scale,
         operating_range=config.scenario.setpoint.as_tuple(),
+        control_scale=max(
+            abs(config.control.output_min), abs(config.control.output_max)
+        ),
     )
 
 
@@ -104,7 +108,11 @@ def run_arm(
         gains = baselines.per_episode_pole_placement(system).gains
         system.reset()  # the tuner runs the plant; undo it
     else:
-        gains = arm.gains or config.control.initial_gains
+        # A residual scheduler carries its own baseline; during warm-up the
+        # PID should hold *that*, so handing control to the network is not a
+        # gain step in the middle of the episode.
+        warm_start = getattr(arm.lstm, "warm_start_gains", None)
+        gains = arm.gains or warm_start or config.control.initial_gains
 
     pid = PID(*baselines.as_tensor_gains(gains))
     pid.set_limits(
@@ -125,6 +133,71 @@ def run_arm(
         lstm_model=arm.lstm,
         session="validation" if arm.lstm is not None else "static",
     ).results
+
+
+def best_fixed_gains(
+    config: ConfigPack,
+    system_name: str,
+    rbf_model: torch.nn.Module | None,
+    steps: int,
+    seed: int,
+    iterations: int = 160,
+    n_episodes: int = 8,
+) -> tuple[tuple[float, float, float], float]:
+    """The best constant Kp/Ki/Kd for this study, searched once and cached.
+
+    This triple is used twice, and using the *same* triple both times is the
+    point: it is the fixed-gain arm every comparison reports, and it is the
+    baseline the residual scheduler is centred on. Centring the network on
+    anything else (the classical tuning, say) makes "captured headroom" partly
+    measure the gap between that centre and the best constant, which is not
+    the scheduler's doing.
+
+    The search episodes are drawn at ``COMPARE_SEED_BASE`` — disjoint from
+    training, LSTM validation and the headroom probe — and the result is
+    cached in ``results/`` keyed by seed, so training and comparison cannot
+    drift apart by re-searching with different budgets.
+    """
+    path = f"{cnfg.METRICS_DIR}/fixed_gains_{system_name}.json"
+    if os.path.exists(path):
+        with open(path) as handle:
+            data = json.load(handle)
+        if data["seed"] == seed and data["iterations"] >= iterations:
+            return tuple(data["gains"]), float(data["mean_iae"])
+
+    dt = config.learning.dt
+    rng = np.random.default_rng(COMPARE_SEED_BASE + seed)
+    episodes = [
+        make_episode(config.scenario, steps, dt, rng) for _ in range(n_episodes)
+    ]
+
+    def objective(gains):
+        arm = Arm(name="search", gains=gains)
+        return baselines.mean_objective(
+            episode_cost(run_arm(arm, config, rbf_model, episode, True), dt)
+            for episode in episodes
+        )
+
+    gains, score = baselines.optimise_fixed_gains(
+        objective,
+        ceiling=config.control.gain_ceiling,
+        iterations=iterations,
+        seed=seed,
+    )
+    with open(path, "w") as handle:
+        json.dump(
+            {
+                "system": system_name,
+                "seed": seed,
+                "iterations": iterations,
+                "n_episodes": n_episodes,
+                "gains": list(gains),
+                "mean_iae": score,
+            },
+            handle,
+            indent=2,
+        )
+    return gains, score
 
 
 def score_final_step(results: SimulationResults, dt: float) -> StepMetrics:
@@ -226,12 +299,8 @@ def main(system_name: str, seed: int, runs: int, show: bool) -> None:
     )
     save_load.load_model(lstm_model, f"pid_lstm_{system_name}.pth")
 
-    # Episodes for tuning the fixed-gain baseline: separate from the ones it is
-    # then scored on, so the search cannot overfit the evaluation set.
-    tune_rng = np.random.default_rng(COMPARE_SEED_BASE + seed)
-    tune_episodes = [
-        make_episode(config.scenario, steps, dt, tune_rng) for _ in range(8)
-    ]
+    # Evaluation episodes are drawn at an offset seed: separate from the ones
+    # the fixed-gain baseline is tuned on, so the search cannot overfit them.
     eval_rng = np.random.default_rng(COMPARE_SEED_BASE + seed + 7777)
     eval_episodes = [
         make_episode(config.scenario, steps, dt, eval_rng) for _ in range(runs)
@@ -246,24 +315,11 @@ def main(system_name: str, seed: int, runs: int, show: bool) -> None:
         f"Kd={classical.gains[2]:.3f}"
     )
 
-    print(
-        f"\nSearching for the best constant gains over "
-        f"{len(tune_episodes)} episodes..."
+    print("\nBest constant gains (cached search on held-out tuning episodes):")
+    best_gains, best_score = best_fixed_gains(
+        config, system_name, rbf_model, steps, seed
     )
-
-    def objective(gains):
-        arm = Arm(name="search", gains=gains)
-        return baselines.mean_objective(
-            episode_cost(
-                run_arm(arm, config, rbf_model, episode, True), dt
-            )
-            for episode in tune_episodes
-        )
-
-    best_gains, best_score = baselines.optimise_fixed_gains(
-        objective, ceiling=config.control.gain_ceiling, iterations=160, seed=seed
-    )
-    print(f"  best fixed gains: Kp={best_gains[0]:.3f} Ki={best_gains[1]:.3f} "
+    print(f"  Kp={best_gains[0]:.3f} Ki={best_gains[1]:.3f} "
           f"Kd={best_gains[2]:.3f}  (mean IAE {best_score:.3f})")
 
     arms = [

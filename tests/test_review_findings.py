@@ -176,6 +176,9 @@ def test_hidden_state_changes_the_prediction_at_the_configured_window():
     length = config.learning.lstm.sequence_length
     torch.manual_seed(0)
     model = LSTMAdaptivePID(5, 32, 3)
+    # The head is zero-initialised by design (an untrained scheduler must be
+    # exactly its baseline), which would hide the recurrence this test probes.
+    torch.nn.init.xavier_uniform_(model.linear.weight)
     model.eval()
 
     hidden = None

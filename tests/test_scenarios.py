@@ -141,7 +141,8 @@ def test_every_setpoint_is_reachable_by_the_actuator(config):
             float(np.clip(0.0, cfg.control.output_min, cfg.control.output_max))
         )
         # Drive with maximum authority towards the target and see if it arrives.
-        limit = cfg.control.output_max if target >= float(system.X) else cfg.control.output_min
+        rising = target >= float(system.X)
+        limit = cfg.control.output_max if rising else cfg.control.output_min
         held = torch.tensor(float(limit))
         reached = False
         for _ in range(int(60.0 / cfg.learning.dt)):

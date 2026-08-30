@@ -67,6 +67,7 @@ def tracking_loss(
     window_end: int,
     overshoot_weight: float = 0.5,
     effort_weight: float = 0.0,
+    gain_rate_weight: float = 0.0,
     target: Literal["plant", "surrogate"] = "plant",
 ) -> torch.Tensor:
     """Tracking loss over one TBPTT window, normalised by the setpoint scale.
@@ -95,6 +96,11 @@ def tracking_loss(
     the gradient to 1e-6. The controller was not converging, it was being told
     almost nothing.
     """
+    if target == "surrogate" and not results.rbf_predictions:
+        raise ValueError(
+            "loss target is 'surrogate' but the episode was run without an "
+            "RBF model, so there are no predictions to score"
+        )
     source = results.rbf_predictions if target == "surrogate" else results.positions
     predicted = torch.stack(source[window_start:window_end])
     window = results.setpoints[window_start:window_end]
@@ -113,7 +119,37 @@ def tracking_loss(
     approach = torch.where(approach == 0, torch.ones_like(approach), approach)
     beyond_setpoint = torch.relu(approach * (predicted - reference) / scale)
 
-    loss = torch.mean(error**2) + overshoot_weight * torch.mean(beyond_setpoint)
+    # Huber rather than squared error: the evaluation metric is IAE, and a
+    # squared loss optimises something else — it overweights the large
+    # transient right after a reference step and barely sees the long tail of
+    # small error that IAE integrates. Huber is |e| in exactly the region that
+    # disagreement matters (beta of 0.1 = 10 % of a characteristic error) and
+    # stays quadratic near zero so the gradient does not chatter at the
+    # setpoint the way a pure L1 gradient (a constant-magnitude sign) does.
+    tracking = torch.nn.functional.smooth_l1_loss(
+        error, torch.zeros_like(error), beta=0.1
+    )
+    loss = tracking + overshoot_weight * torch.mean(beyond_setpoint)
+
+    if gain_rate_weight:
+        gains = torch.stack(
+            [
+                torch.stack(getattr(results, name)[window_start:window_end])
+                for name in ("kp_values", "ki_values", "kd_values")
+            ],
+            dim=1,
+        ) / config.gain_scale
+        if gains.shape[0] > 1:
+            # Penalise the *rate* of gain change (per second, so one weight
+            # means the same thing at any dt), not gain variation as such. A
+            # schedule that tracks the operating point across a 2 s traverse
+            # is cheap under this term; flipping the gains every sample is
+            # not. Without it the first trained scheduler won on IAE while
+            # tripling total control variation — winning by working the
+            # actuator, not by scheduling.
+            dt_value = float(torch.as_tensor(config.dt).reshape(-1)[0])
+            rate = torch.diff(gains, dim=0) / dt_value
+            loss = loss + gain_rate_weight * torch.mean(rate**2)
 
     if effort_weight:
         controls = torch.stack(results.control_outputs[window_start:window_end])
@@ -149,7 +185,7 @@ def run_episode(
     simulation_config: SimulationConfig,
     extract_rbf_input: RbfExtractor,
     extract_lstm_input: LstmExtractor,
-    rbf_model: nn.Module,
+    rbf_model: nn.Module | None = None,
     lstm_model: nn.Module | None = None,
     loss_function: LossFn = tracking_loss,
     session: Session = "train",
@@ -234,8 +270,12 @@ def run_episode(
             control_output = pid.compute(error, dt, measurement=system.X)
 
             # ── surrogate prediction of the *next* output ────────────────
-            rbf_prediction = rbf_model(extract_rbf_input(system, control_output))
-            rbf_prediction = rbf_prediction.reshape(-1)[0]
+            # Optional: the plants are differentiable, so the surrogate is a
+            # study subject here (what does replacing the plant with a learned
+            # model cost?), not a requirement for training.
+            if rbf_model is not None:
+                rbf_prediction = rbf_model(extract_rbf_input(system, control_output))
+                rbf_prediction = rbf_prediction.reshape(-1)[0]
 
             # ── plant ────────────────────────────────────────────────────
             disturbance = simulation_config.disturbance_at(step)
@@ -249,7 +289,8 @@ def run_episode(
             results.setpoints.append(setpoint)
             results.positions.append(system.X.reshape(-1)[0])
             results.control_outputs.append(control_output.reshape(-1)[0])
-            results.rbf_predictions.append(rbf_prediction)
+            if rbf_model is not None:
+                results.rbf_predictions.append(rbf_prediction)
             results.error_history.append(error.reshape(-1)[0])
             results.error_diff_history.append(error.reshape(-1)[0] - previous_error)
             results.kp_values.append(torch.as_tensor(kp).reshape(-1)[0])
@@ -302,7 +343,7 @@ def run_simulation(
     simulation_config: SimulationConfig,
     extract_rbf_input: RbfExtractor,
     extract_lstm_input: LstmExtractor,
-    rbf_model: nn.Module,
+    rbf_model: nn.Module | None = None,
     lstm_model: nn.Module | None = None,
     **kwargs,
 ) -> SimulationResults:

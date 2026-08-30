@@ -52,6 +52,12 @@ class ControlConfig(BaseModel):
         ..., description="Amplitude of the open-loop step test used by the "
         "classical tuning baseline."
     )
+    residual_range: float = Field(
+        2.5,
+        description="Multiplicative half-width of the residual scheduler's "
+        "correction band: the network can move each gain within "
+        "[baseline/range, baseline*range] around the best-constant baseline.",
+    )
 
 
 class ScenarioConfig(BaseModel):
@@ -99,6 +105,13 @@ class LSTMConfig(BaseModel):
         description="Penalty on control-signal movement. A scheduler that wins "
         "on tracking purely by working the actuator harder is not a clean win, "
         "so the trade-off is made explicit rather than left implicit.",
+    )
+    gain_rate_weight: float = Field(
+        0.0,
+        description="Penalty on the per-second rate of gain change, in "
+        "fractions of the gain ceiling. Keeps the scheduler from chattering "
+        "the gains sample-to-sample, which wins IAE at the price of control "
+        "effort the comparison would otherwise have to flag.",
     )
     optimizer: OptimizerConfig
     scheduler: SchedulerConfig = SchedulerConfig()
