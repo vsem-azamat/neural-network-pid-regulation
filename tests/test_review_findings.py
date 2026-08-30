@@ -6,7 +6,6 @@ introduced while fixing something else, and none of them raised.
 
 import subprocess
 
-import numpy as np
 import pytest
 import torch
 
@@ -46,8 +45,9 @@ def test_step_test_is_long_enough_to_identify_the_plant(system_name):
 
     _, response = system.step_response(steps=steps, final_input=1.0)
     tail = response[int(0.9 * len(response)) :]
-    final = float(response[-1])
-    assert abs(float(tail.max()) - float(tail.min())) < 0.02 * abs(final - float(response[0])), (
+    drift = abs(float(tail.max()) - float(tail.min()))
+    travel = abs(float(response[-1]) - float(response[0]))
+    assert drift < 0.02 * travel, (
         "step response has not settled by the end of the test window"
     )
 
@@ -131,7 +131,8 @@ def test_anti_windup_works_on_an_actuator_that_cannot_go_negative():
     assert float(pid.integral) == pytest.approx(wound, rel=1e-6), "integral wound up"
 
     # The error flips: the controller must come off the limit promptly.
-    outputs = [float(pid.compute_backward_euler(torch.tensor(-50.0), DT)) for _ in range(3)]
+    flipped = torch.tensor(-50.0)
+    outputs = [float(pid.compute_backward_euler(flipped, DT)) for _ in range(3)]
     assert outputs[0] < 4000.0
 
 
