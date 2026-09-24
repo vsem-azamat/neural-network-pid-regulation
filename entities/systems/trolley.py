@@ -1,61 +1,93 @@
+"""Mass–spring–damper trolley: a second-order, oscillatory plant."""
+
 import torch
 from torch import Tensor
 
-from .base import BaseSystem
+from .base import ZERO, BaseSystem
 
 
 class Trolley(BaseSystem):
+    """m·ẍ + c·ẋ + F_c·tanh(ẋ/ε) + k·x + k₃·x³ = F + d
+
+    Integrated with semi-implicit (symplectic) Euler, which stays stable on an
+    oscillatory plant for far larger time steps than explicit Euler.
+
+    The two optional terms are what make gain scheduling a sensible thing to
+    attempt on this plant at all:
+
+    * ``spring_cubic`` (k₃) is a hardening spring. Local stiffness is
+      k + 3·k₃·x², so with k=1 and k₃=0.02 the plant is 14 times stiffer at
+      x=15 m than at the origin, and its natural frequency nearly quadruples
+      across the operating range. One set of gains cannot suit both ends.
+    * ``coulomb_friction`` (F_c) is dry friction, smoothed with tanh so the
+      model stays differentiable. It is the classic reason a fixed controller
+      leaves a steady-state offset: below the break-away force nothing moves,
+      and the gain needed to overcome it is more than the gain that keeps the
+      loop well damped once moving.
+
+    Both default to zero, which recovers the linear plant.
+    """
+
     def __init__(
-        self, mass: Tensor, spring: Tensor, friction: Tensor, dt: Tensor
+        self,
+        mass: Tensor,
+        spring: Tensor,
+        friction: Tensor,
+        dt: Tensor,
+        spring_cubic: Tensor | float = 0.0,
+        coulomb_friction: Tensor | float = 0.0,
+        stiction_velocity: float = 1e-2,
     ) -> None:
         """
         Args:
-                mass (float): mass of the trolley
-                spring (float): spring constant of the trolley
-                friction (float): friction coefficient of the trolley
-                dt (float): time step between the current and previous position
+            mass: Trolley mass, kg.
+            spring: Linear spring constant, N/m.
+            friction: Viscous friction coefficient, N/(m/s).
+            dt: Integration step, s.
+            spring_cubic: Hardening coefficient k₃, N/m³.
+            coulomb_friction: Dry friction force, N.
+            stiction_velocity: Width of the tanh that smooths the dry-friction
+                sign change, m/s. Small enough to behave like Coulomb friction,
+                large enough to stay differentiable.
         """
-        self.mass = mass
-        self.friction = friction
-        self.spring = spring
-        self.dt = dt
+        self.mass = torch.as_tensor(mass, dtype=torch.float32)
+        self.spring = torch.as_tensor(spring, dtype=torch.float32)
+        self.friction = torch.as_tensor(friction, dtype=torch.float32)
+        self.dt = torch.as_tensor(dt, dtype=torch.float32)
+        self.spring_cubic = torch.as_tensor(spring_cubic, dtype=torch.float32)
+        self.coulomb_friction = torch.as_tensor(coulomb_friction, dtype=torch.float32)
+        self.stiction_velocity = float(stiction_velocity)
 
         self.position = torch.tensor(0.0)
-        self.delta_position = torch.tensor(0.0)
         self.velocity = torch.tensor(0.0)
         self.acceleration = torch.tensor(0.0)
 
     def apply_control(
-        self, control_output: Tensor, disturbance: Tensor = torch.tensor(0.0)
+        self, control_output: Tensor, disturbance: Tensor = ZERO
     ) -> Tensor:
-        """
-            Update the position and velocity of the trolley based on the control output
-
-            Equation of model:
-        F = ma
-        a = F/m
-        a = F/m - friction*v/m - spring_constant*x/m - disturbance/m
-        v = v + a*dt
-        x = x + v*dt
-        """
-        assert control_output is not None, "Control output is None"
-        F = control_output
-        self.acceleration = (
-            F / self.mass
-            - self.friction * self.velocity.clone().detach() / self.mass
-            - self.spring * self.position.clone().detach() / self.mass
-            - disturbance / self.mass
-        )
-        self.velocity = self.velocity.clone().detach() + self.acceleration * self.dt
-        self.position = self.position.clone().detach() + self.velocity * self.dt
+        """Advance one step under force plus ``disturbance``, both in newtons."""
+        force = control_output + disturbance
+        restoring = self.spring * self.position + self.spring_cubic * self.position**3
+        damping = self.friction * self.velocity
+        if float(self.coulomb_friction) != 0.0:
+            damping = damping + self.coulomb_friction * torch.tanh(
+                self.velocity / self.stiction_velocity
+            )
+        self.acceleration = (force - damping - restoring) / self.mass
+        # Semi-implicit Euler: velocity first, then position from the *new* velocity.
+        self.velocity = self.velocity + self.acceleration * self.dt
+        self.position = self.position + self.velocity * self.dt
         return self.position
 
     def reset(self) -> None:
-        """Reset: position, velocity, and delta_position to zero"""
-        self.position = torch.tensor(0)
-        self.velocity = torch.tensor(0)
-        self.delta_position = torch.tensor(0)
-        self.acceleration = torch.tensor(0)
+        self.position = torch.tensor(0.0)
+        self.velocity = torch.tensor(0.0)
+        self.acceleration = torch.tensor(0.0)
+
+    def detach_state(self) -> None:
+        self.position = self.position.detach()
+        self.velocity = self.velocity.detach()
+        self.acceleration = self.acceleration.detach()
 
     @property
     def X(self) -> Tensor:
@@ -69,28 +101,33 @@ class Trolley(BaseSystem):
     def d2XdT2(self) -> Tensor:
         return self.acceleration
 
-    @property
-    def min_dt(self, oversampling_factor: float = 10.0) -> Tensor:
+    def local_stiffness(self, amplitude: float = 0.0) -> Tensor:
+        """Tangent stiffness k + 3·k₃·x² at a displacement of ``amplitude``."""
+        return self.spring + 3.0 * self.spring_cubic * float(amplitude) ** 2
+
+    def min_dt(self, oversampling_factor: float = 10.0, amplitude: float = 0.0) -> Tensor:
+        """Sampling step that resolves the damped natural frequency.
+
+        Takes the smaller of the oversampled Nyquist step and the explicit-Euler
+        stability bound 2/ω_n, so the number is safe for either integrator.
+
+        ``amplitude`` matters once the spring hardens: the plant gets faster the
+        further it travels, so a step size checked only at the origin can be far
+        too large where the controller actually operates.
         """
-        Calculate the minimum dt for good approximation based on the system's natural frequency
-        and the Nyquist criterion.
-
-        Args:
-            oversampling_factor (float): Factor by which to oversample the Nyquist rate (default is 10)
-
-        Returns:
-            Tensor: Minimum dt value
-        """
-        # Calculate the natural frequency (omega_n)
-        omega_n = torch.sqrt(self.spring / self.mass)
-
-        # Apply the Nyquist criterion with oversampling
-        min_dt = (torch.pi) / (oversampling_factor * omega_n)
-
-        # Ensure stability for the Euler integration method
+        omega_n = torch.sqrt(self.local_stiffness(amplitude) / self.mass)
+        nyquist_dt = torch.pi / (oversampling_factor * omega_n)
         max_stable_dt = 2.0 / omega_n
+        return torch.min(nyquist_dt, max_stable_dt)
 
-        # Choose the smaller dt to satisfy both criteria
-        min_dt = torch.min(min_dt, max_stable_dt)
+    @property
+    def damping_ratio(self) -> Tensor:
+        """ζ < 1 underdamped, ζ = 1 critical, ζ > 1 overdamped.
 
-        return min_dt
+        Reported for the linear part of the spring, at the origin.
+        """
+        return self.friction / (2.0 * torch.sqrt(self.spring * self.mass))
+
+    @property
+    def is_nonlinear(self) -> bool:
+        return float(self.spring_cubic) != 0.0 or float(self.coulomb_friction) != 0.0

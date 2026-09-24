@@ -1,7 +1,6 @@
-numpy
-matplotlib
-scikit-learn
-seaborn
-pytorch
-matplotlib
-pydantic
+torch>=2.2,<3
+numpy>=1.26,<3
+matplotlib>=3.8,<4
+seaborn>=0.13,<0.14
+pydantic>=2.6,<3
+PyYAML>=6.0,<7
