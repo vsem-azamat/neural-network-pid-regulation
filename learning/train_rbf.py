@@ -12,7 +12,7 @@ import argparse
 
 import numpy as np
 
-from config import load_config
+from config import available_studies, load_config
 from learning.rbf_dataset import (
     collect_trajectories,
     holdout_excitation,
@@ -36,7 +36,7 @@ def main(system_name: str, seed: int, show: bool) -> None:
 
     print(f"Collecting {rbf_config.num_trajectories} trajectories...")
     rng = np.random.default_rng(seed)
-    X, y = collect_trajectories(system_name, config, rng)
+    X, y = collect_trajectories(config, rng)
     print(f"  dataset: {tuple(X.shape)} -> {tuple(y.shape)}")
     print(f"  input range per feature: {X.min(dim=0).values.tolist()}")
     print(f"                           {X.max(dim=0).values.tolist()}")
@@ -69,7 +69,7 @@ def main(system_name: str, seed: int, show: bool) -> None:
     # never seen during fitting.
     steps = 300
     time, controls = holdout_excitation(config, steps, seed=seed + 1_000)
-    system = build_system(system_name, config)
+    system = build_system(config)
     system.reset()
     randomise_initial_state(system, config, np.random.default_rng(seed + 2_000))
     predicted, actual = rollout_comparison(model, system, controls)
@@ -86,7 +86,7 @@ def main(system_name: str, seed: int, show: bool) -> None:
         actual,
         history,
         system_name=system_name.capitalize(),
-        state_label=STATE_LABELS.get(system_name, "Output"),
+        state_label=STATE_LABELS.get(config.plant, "Output"),
         num_epochs=rbf_config.num_epochs,
         learning_rate=rbf_config.lr,
         optimizer_name="adam",
@@ -96,7 +96,7 @@ def main(system_name: str, seed: int, show: bool) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("system", choices=["trolley", "thermal"])
+    parser.add_argument("system", choices=available_studies())
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--show", action="store_true", help="Open plot windows.")
     args = parser.parse_args()

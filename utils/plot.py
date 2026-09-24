@@ -14,9 +14,8 @@ def plot_training_history(
 ) -> None:
     """Loss, gradient norm and tracking error over training episodes.
 
-    The gradient-norm panel is not decoration: a flat line at zero here is
-    exactly what the original project produced for ten epochs while printing a
-    plausible-looking loss curve.
+    The gradient-norm panel is a health check: a flat line at zero means the
+    loss is not reaching the network, however plausible the loss curve looks.
     """
     epochs = [h["epoch"] for h in history]
     fig, axs = plt.subplots(3, 1, figsize=(10, 11), sharex=True)
@@ -28,7 +27,17 @@ def plot_training_history(
     axs[1].semilogy(epochs, [h["grad_norm"] for h in history], color="tab:red")
     axs[1].set_ylabel("|grad| (log)")
 
-    axs[2].plot(epochs, [h["tracking_iae"] for h in history], color="tab:green")
+    axs[2].plot(epochs, [h["tracking_iae"] for h in history], color="tab:green",
+                label="training episode")
+    validated = [
+        (h["epoch"], h["validation_iae"])
+        for h in history
+        if h.get("validation_iae") is not None
+    ]
+    if validated:
+        axs[2].plot(*zip(*validated, strict=True), "o-", color="tab:purple",
+                    label="validation (checkpoint selection)")
+        axs[2].legend(loc="best")
     axs[2].set_ylabel("Episode IAE")
     axs[2].set_xlabel("Episode")
 

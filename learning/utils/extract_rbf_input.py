@@ -1,10 +1,9 @@
 """Feature extractors that turn a plant's live state into an RBF model input.
 
 These run *inside* the differentiable simulation loop, so every tensor here has
-to stay attached to the autograd graph.  Building the row with ``torch.stack``
-rather than ``torch.tensor([...])`` is the whole point: ``torch.tensor`` copies
-raw numbers into a fresh leaf and silently severs the backward path from the
-loss to the LSTM that produced the control signal.
+to stay attached to the autograd graph: rows are built with ``torch.stack``,
+never ``torch.tensor([...])``, which would copy the values into a fresh leaf and
+cut the gradient path to the LSTM.
 
 The extractors take the control signal *currently* being applied, so the
 prediction lines up with the measurement one step later:

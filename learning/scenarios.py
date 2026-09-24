@@ -1,11 +1,9 @@
 """Episode generation: reference trajectories, load disturbances, plant variation.
 
-An adaptive controller can only be shown to adapt if the episode gives it
-something to adapt to. The original training loop built its reference as
-``[torch.randn(1) * 10] * train_steps``, which repeats a *single object* — one
-step to a random constant, then a hundred and fifty steps of holding it, with no
-disturbance and a fixed plant. On that episode a well-chosen constant gain is
-optimal, so there is nothing for gain scheduling to win and nothing to measure.
+An adaptive controller can only adapt if the episode gives it something to
+adapt to: on one step to a constant, with no disturbance and a fixed plant, a
+well-chosen constant gain is optimal. Each episode therefore has a setpoint
+staircase, piecewise-constant load disturbances and its own plant parameters.
 
 Each generator here is deterministic given a seeded RNG, so a run reproduces
 exactly.
@@ -88,21 +86,27 @@ def make_episode(
 
 
 def build_system(
-    name: str, config: ConfigPack, overrides: dict | None = None
+    config: ConfigPack, overrides: dict | None = None
 ) -> BaseSystem:
-    """Instantiate a plant from config, with optional per-episode overrides."""
+    """Instantiate the config's plant, with optional per-episode overrides.
+
+    Nonlinear terms default to zero, so a config that omits them describes the
+    linear plant and the two studies share one code path.
+    """
     parameters = dict(config.system)
     parameters.update(overrides or {})
     dt = torch.tensor(config.learning.dt)
 
-    if name == "trolley":
+    if config.plant == "trolley":
         return Trolley(
             mass=torch.tensor(parameters["mass"]),
             spring=torch.tensor(parameters["spring"]),
             friction=torch.tensor(parameters["friction"]),
             dt=dt,
+            spring_cubic=parameters.get("spring_cubic", 0.0),
+            coulomb_friction=parameters.get("coulomb_friction", 0.0),
         )
-    if name == "thermal":
+    if config.plant == "thermal":
         return Thermal(
             thermal_capacity=torch.tensor(parameters["thermal_capacity"]),
             heat_transfer_coefficient=torch.tensor(
@@ -111,8 +115,9 @@ def build_system(
             dt=dt,
             initial_temperature=torch.tensor(parameters["initial_temperature"]),
             ambient_temperature=torch.tensor(parameters["ambient_temperature"]),
+            radiative_coefficient=parameters.get("radiative_coefficient", 0.0),
         )
-    raise ValueError(f"Unknown system: {name!r}")
+    raise ValueError(f"Unknown plant: {config.plant!r}")
 
 
 def episode_stream(

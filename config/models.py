@@ -2,8 +2,7 @@
 
 Feature counts are deliberately absent: the LSTM's input width is fixed by
 :data:`learning.utils.N_FEATURES` and the RBF's by the plant's feature
-extractor. Having them in the config only created a way for the two to disagree
-— which they did, silently, because both plants happened to be set to 5.
+extractor, so config and code cannot disagree.
 """
 
 from typing import Literal
@@ -52,15 +51,19 @@ class ControlConfig(BaseModel):
         ..., description="Amplitude of the open-loop step test used by the "
         "classical tuning baseline."
     )
+    residual_range: float = Field(
+        2.5,
+        description="Multiplicative half-width of the residual scheduler's "
+        "correction band: the network can move each gain within "
+        "[baseline/range, baseline*range] around the best-constant baseline.",
+    )
 
 
 class ScenarioConfig(BaseModel):
     """How a training/evaluation episode is generated.
 
-    A single constant setpoint per episode — what the original code produced,
-    since `[value] * n` repeats one object — gives an adaptive controller nothing
-    to adapt to. These knobs create reference changes, load disturbances and
-    plant-to-plant variation, which is where gain scheduling can actually pay off.
+    These knobs create reference changes, load disturbances and plant-to-plant
+    variation, which is where gain scheduling can pay off.
     """
 
     setpoint: Range
@@ -100,6 +103,13 @@ class LSTMConfig(BaseModel):
         "on tracking purely by working the actuator harder is not a clean win, "
         "so the trade-off is made explicit rather than left implicit.",
     )
+    gain_rate_weight: float = Field(
+        0.0,
+        description="Penalty on the per-second rate of gain change, in "
+        "fractions of the gain ceiling. Keeps the scheduler from chattering "
+        "the gains sample-to-sample, which wins IAE at the price of control "
+        "effort the comparison would otherwise have to flag.",
+    )
     optimizer: OptimizerConfig
     scheduler: SchedulerConfig = SchedulerConfig()
     model: LSTMModelConfig
@@ -128,6 +138,14 @@ class LearningConfig(BaseModel):
 
 
 class ConfigPack(BaseModel):
+    """One study: a plant, how it is driven, and how the controller is trained.
+
+    ``plant`` names the *dynamics class*, separately from the name of the config
+    file. That lets a linear and a nonlinear study of the same plant live side by
+    side and be compared, which is the whole point of having both.
+    """
+
+    plant: Literal["trolley", "thermal"]
     learning: LearningConfig
     control: ControlConfig
     scenario: ScenarioConfig

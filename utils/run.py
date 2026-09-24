@@ -1,19 +1,12 @@
 """Simulation and training loops.
 
-The training loop is the heart of the project, and the part that previously did
-nothing: the loss was computed from tensors that had been rebuilt with
-``torch.tensor(...)``, which severs the autograd graph, so ``backward()`` left
-every LSTM parameter with ``grad=None`` and ``optimizer.step()`` was a no-op for
-ten epochs. The chain that has to stay connected is
+The chain that has to stay differentiable during training is
 
-    LSTM gains -> PID -> plant state -> RBF surrogate -> loss
+    LSTM gains -> PID -> plant state (or RBF surrogate) -> loss
 
-and :func:`run_episode` now keeps it connected, truncating it deliberately at
-fixed windows (truncated backpropagation through time) instead of accidentally
-at every step.
-
-``tests/test_gradient_flow.py`` asserts the gradient is non-zero, so this can
-never silently regress again.
+:func:`run_episode` keeps it connected and cuts it deliberately at fixed
+windows (truncated backpropagation through time).
+``tests/test_gradient_flow.py`` asserts the gradient actually reaches the LSTM.
 """
 
 from collections.abc import Callable
@@ -67,6 +60,7 @@ def tracking_loss(
     window_end: int,
     overshoot_weight: float = 0.5,
     effort_weight: float = 0.0,
+    gain_rate_weight: float = 0.0,
     target: Literal["plant", "surrogate"] = "plant",
 ) -> torch.Tensor:
     """Tracking loss over one TBPTT window, normalised by the setpoint scale.
@@ -95,23 +89,98 @@ def tracking_loss(
     the gradient to 1e-6. The controller was not converging, it was being told
     almost nothing.
     """
+    if target == "surrogate" and not results.rbf_predictions:
+        raise ValueError(
+            "loss target is 'surrogate' but the episode was run without an "
+            "RBF model, so there are no predictions to score"
+        )
     source = results.rbf_predictions if target == "surrogate" else results.positions
     predicted = torch.stack(source[window_start:window_end])
     window = results.setpoints[window_start:window_end]
     reference = torch.stack([torch.as_tensor(s).reshape(-1)[0] for s in window])
 
-    error = (predicted - reference) / max(abs(config.error_scale), 1e-6)
+    scale = max(abs(config.error_scale), 1e-6)
+    error = (predicted - reference) / scale
 
-    loss = torch.mean(error**2) + overshoot_weight * torch.mean(torch.relu(error))
+    # Overshoot means going *past* the setpoint: above it after a rising step,
+    # below it after a falling one. The direction comes from the setpoint
+    # change itself, not from where the plant happens to be when the TBPTT
+    # window starts (that would reward an overshoot already in progress).
+    approach = torch.tensor(
+        _step_directions(results, window_start, window_end), dtype=reference.dtype
+    )
+    beyond_setpoint = torch.relu(approach * (predicted - reference) / scale)
+
+    # Huber rather than squared error: the evaluation metric is IAE, and a
+    # squared loss optimises something else — it overweights the large
+    # transient right after a reference step and barely sees the long tail of
+    # small error that IAE integrates. Huber is |e| in exactly the region that
+    # disagreement matters (beta of 0.1 = 10 % of a characteristic error) and
+    # stays quadratic near zero so the gradient does not chatter at the
+    # setpoint the way a pure L1 gradient (a constant-magnitude sign) does.
+    tracking = torch.nn.functional.smooth_l1_loss(
+        error, torch.zeros_like(error), beta=0.1
+    )
+    loss = tracking + overshoot_weight * torch.mean(beyond_setpoint)
+
+    if gain_rate_weight:
+        gains = torch.stack(
+            [
+                torch.stack(getattr(results, name)[window_start:window_end])
+                for name in ("kp_values", "ki_values", "kd_values")
+            ],
+            dim=1,
+        ) / config.gain_scale
+        if gains.shape[0] > 1:
+            # Penalise the *rate* of gain change (per second, so one weight
+            # means the same thing at any dt), not gain variation as such. A
+            # schedule that tracks the operating point across a 2 s traverse
+            # is cheap under this term; flipping the gains every sample is
+            # not. Without it the first trained scheduler won on IAE while
+            # tripling total control variation — winning by working the
+            # actuator, not by scheduling.
+            dt_value = float(torch.as_tensor(config.dt).reshape(-1)[0])
+            rate = torch.diff(gains, dim=0) / dt_value
+            loss = loss + gain_rate_weight * torch.mean(rate**2)
 
     if effort_weight:
         controls = torch.stack(results.control_outputs[window_start:window_end])
         if controls.numel() > 1:
             # Normalised by the actuator's own range, so one weight means the
             # same thing on a +/-50 N trolley and a 0-4 kW heater.
-            span = max(controls.detach().abs().max().item(), 1.0)
+            span = max(abs(float(config.control_scale)), 1e-6)
             loss = loss + effort_weight * torch.mean((torch.diff(controls) / span) ** 2)
     return loss
+
+
+def _step_directions(
+    results: SimulationResults, window_start: int, window_end: int
+) -> list[float]:
+    """+1 / -1 per step in the window: the sign of the last setpoint change.
+
+    Before the first change, the direction is from the initial output to the
+    first setpoint.
+    """
+    values = [
+        float(torch.as_tensor(s).reshape(-1)[0])
+        for s in results.setpoints[:window_end]
+    ]
+    # Walk back from the window start to the most recent setpoint change.
+    k = window_start
+    while k > 0 and values[k - 1] == values[k]:
+        k -= 1
+    if k > 0:
+        direction = 1.0 if values[k] > values[k - 1] else -1.0
+    else:
+        initial = float(results.positions[0].detach().reshape(-1)[0])
+        direction = -1.0 if values[0] < initial else 1.0
+
+    directions = []
+    for i in range(window_start, window_end):
+        if i > window_start and values[i] != values[i - 1]:
+            direction = 1.0 if values[i] > values[i - 1] else -1.0
+        directions.append(direction)
+    return directions
 
 
 def surrogate_health(results: SimulationResults) -> dict[str, float]:
@@ -138,7 +207,7 @@ def run_episode(
     simulation_config: SimulationConfig,
     extract_rbf_input: RbfExtractor,
     extract_lstm_input: LstmExtractor,
-    rbf_model: nn.Module,
+    rbf_model: nn.Module | None = None,
     lstm_model: nn.Module | None = None,
     loss_function: LossFn = tracking_loss,
     session: Session = "train",
@@ -158,12 +227,26 @@ def run_episode(
         raise ValueError("Optimizer must be provided for a training session.")
     if session == "static" and lstm_model is not None:
         raise ValueError("A static session must not be given an LSTM model.")
+    if session == "train" and lstm_model is None:
+        # Without this the run only fails at the first TBPTT boundary, after a
+        # whole episode has been simulated.
+        raise ValueError("A training session needs an LSTM model to train.")
 
     dt = torch.as_tensor(simulation_config.dt, dtype=torch.float32)
-    max_dt = system.min_dt()
+    # Check the step size where the loop will actually operate, not at the
+    # origin: a nonlinear plant can be several times faster out at its setpoints
+    # than it is at rest, and a check at rest would pass a step that is far too
+    # large everywhere it matters. 1.3x leaves room for overshoot.
+    magnitudes = (
+        abs(float(torch.as_tensor(sp).reshape(-1)[0]))
+        for sp in simulation_config.setpoints
+    )
+    operating_amplitude = 1.3 * max(magnitudes, default=0.0)
+    max_dt = system.min_dt(amplitude=operating_amplitude)
     if not bool(dt < max_dt):
         raise ValueError(
-            f"Time step {float(dt):.4g}s is too large for this plant "
+            f"Time step {float(dt):.4g}s is too large for this plant at an "
+            f"operating amplitude of {operating_amplitude:.3g} "
             f"(needs < {float(max_dt):.4g}s) — the integration would not resolve "
             "its dynamics."
         )
@@ -187,11 +270,20 @@ def run_episode(
             ).reshape(-1)[0]
 
             # ── controller gains ─────────────────────────────────────────
-            if lstm_model is not None and step >= simulation_config.warm_up_steps:
+            if lstm_model is not None:
                 lstm_input = extract_lstm_input(simulation_config, results)
-                normalised_gains, hidden = lstm_model(lstm_input, hidden)
-                kp, ki, kd = normalised_gains[0] * gain_scale
-                pid.update_gains(kp, ki, kd)
+                if step >= simulation_config.warm_up_steps:
+                    normalised_gains, hidden = lstm_model(lstm_input, hidden)
+                    kp, ki, kd = normalised_gains[0] * gain_scale
+                    pid.update_gains(kp, ki, kd)
+                else:
+                    # Prime the recurrent state during warm-up without acting on
+                    # its output. With a short input window the hidden state *is*
+                    # the network's memory, so handing it control cold would mean
+                    # its first decision is made with no history at all.
+                    with torch.no_grad():
+                        _, hidden = lstm_model(lstm_input, hidden)
+                    kp, ki, kd = pid.gains
             else:
                 kp, ki, kd = pid.gains
 
@@ -200,8 +292,12 @@ def run_episode(
             control_output = pid.compute(error, dt, measurement=system.X)
 
             # ── surrogate prediction of the *next* output ────────────────
-            rbf_prediction = rbf_model(extract_rbf_input(system, control_output))
-            rbf_prediction = rbf_prediction.reshape(-1)[0]
+            # Optional: the plants are differentiable, so the surrogate is a
+            # study subject here (what does replacing the plant with a learned
+            # model cost?), not a requirement for training.
+            if rbf_model is not None:
+                rbf_prediction = rbf_model(extract_rbf_input(system, control_output))
+                rbf_prediction = rbf_prediction.reshape(-1)[0]
 
             # ── plant ────────────────────────────────────────────────────
             disturbance = simulation_config.disturbance_at(step)
@@ -215,7 +311,8 @@ def run_episode(
             results.setpoints.append(setpoint)
             results.positions.append(system.X.reshape(-1)[0])
             results.control_outputs.append(control_output.reshape(-1)[0])
-            results.rbf_predictions.append(rbf_prediction)
+            if rbf_model is not None:
+                results.rbf_predictions.append(rbf_prediction)
             results.error_history.append(error.reshape(-1)[0])
             results.error_diff_history.append(error.reshape(-1)[0] - previous_error)
             results.kp_values.append(torch.as_tensor(kp).reshape(-1)[0])
@@ -268,7 +365,7 @@ def run_simulation(
     simulation_config: SimulationConfig,
     extract_rbf_input: RbfExtractor,
     extract_lstm_input: LstmExtractor,
-    rbf_model: nn.Module,
+    rbf_model: nn.Module | None = None,
     lstm_model: nn.Module | None = None,
     **kwargs,
 ) -> SimulationResults:

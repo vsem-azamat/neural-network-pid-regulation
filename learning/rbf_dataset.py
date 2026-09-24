@@ -1,15 +1,8 @@
 """Dataset construction for the RBF plant surrogate.
 
-The surrogate is used to predict the *next* output along a closed-loop
-trajectory, so it has to be trained on trajectories. The original sampler drew
-each example independently — a random position, a random velocity, and a random
-acceleration that ``apply_control`` immediately overwrote from the force, making
-that fourth input pure noise with respect to the label. It also sampled a range
-(±100 in position and velocity) an order of magnitude wider than the ±20 the
-controller ever visits, so most of the model's capacity went to a region it is
-never asked about.
-
-Here the plant is driven with band-limited random inputs from varied initial
+The surrogate predicts the *next* output along a closed-loop trajectory, so it
+is trained on trajectories, over the range the controller actually visits.
+The plant is driven with band-limited random inputs from varied initial
 conditions, and consecutive states are recorded. The inputs match the feature
 extractors in :mod:`learning.utils.extract_rbf_input` exactly.
 """
@@ -54,7 +47,6 @@ def randomise_initial_state(
 
 
 def collect_trajectories(
-    system_name: str,
     config: ConfigPack,
     rng: np.random.Generator,
 ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -75,7 +67,7 @@ def collect_trajectories(
             name: float(rng.uniform(*bounds.as_tuple()))
             for name, bounds in config.scenario.randomize_plant.items()
         }
-        system = build_system(system_name, config, overrides)
+        system = build_system(config, overrides)
         system.reset()
         # Start each trajectory somewhere in the operating range rather than
         # always from equilibrium. Without this the dataset only covers the part

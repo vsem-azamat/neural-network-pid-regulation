@@ -1,7 +1,11 @@
 # Custon
 .vscode/
 plots/
-test*
+# Was `test*`, inherited from the original repository. It silently excluded the
+# whole tests/ tree, so no test in this project was ever committed and CI ran
+# against nothing. Scoped to the scratch files it was meant for.
+test_scratch*
+scratch_test*
 *bad*.pth
 /*.pth
 wandb/

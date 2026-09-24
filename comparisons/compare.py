@@ -6,10 +6,7 @@
 Protocol, which is most of what makes the numbers meaningful:
 
 * Every controller is run on the **same** held-out episodes — same reference
-  staircase, same disturbances, same plant parameters. The previous version drew
-  a fresh random setpoint per controller and, for the third arm, skipped the
-  reset entirely, so that run started from wherever the previous one had left
-  the trolley and the controller kept the gains the LSTM had last set.
+  staircase, same disturbances, same plant parameters.
 * The plant and controller are reset before every single run.
 * Because the episodes are shared, comparisons are **paired**: alongside the
   means we report how often each controller wins episode-by-episode, which is
@@ -20,7 +17,9 @@ Protocol, which is most of what makes the numbers meaningful:
 """
 
 import argparse
+import hashlib
 import json
+import os
 from dataclasses import dataclass
 
 import numpy as np
@@ -28,11 +27,11 @@ import torch
 
 from classes.simulation import SimulationConfig, SimulationResults
 from comparisons import baselines
-from config import cnfg, load_config
+from config import available_studies, cnfg, load_config
 from config.models import ConfigPack
 from entities.pid import PID
 from learning.scenarios import Episode, build_system, make_episode
-from learning.utils import extract_lstm_input
+from learning.utils import N_FEATURES, extract_lstm_input
 from learning.utils.extract_rbf_input import EXTRACTORS
 from models.pid_lstm import LSTMAdaptivePID
 from utils import save_load
@@ -53,11 +52,26 @@ class Arm:
     gains: tuple[float, float, float] | None  # None = gains come from the LSTM
     lstm: torch.nn.Module | None = None
     per_episode_gains: bool = False  # recompute gains from each episode's plant
+    warm_up_steps: int | None = None  # override; see build_simulation_config
 
 
 def build_simulation_config(
-    config: ConfigPack, episode: Episode, with_disturbance: bool
+    config: ConfigPack,
+    episode: Episode,
+    with_disturbance: bool,
+    warm_up_steps: int | None = None,
 ) -> SimulationConfig:
+    """Assemble the episode's simulation configuration.
+
+    ``warm_up_steps`` exists because the warm-up is not neutral between arms. A
+    controller driven through the network path holds the *initial* gains for the
+    first ``warm_up_steps`` samples, while a constant-gain arm applies its own
+    gains from step 0. A recurrent network needs that period to build a hidden
+    state, but a memoryless lookup table does not — and giving it one makes a
+    schedule seeded with a constant *not* equal to that constant, so the schedule
+    family stops containing the constant family and a strictly larger search
+    space can score worse. Arms with no state to prime pass 0.
+    """
     lstm = config.learning.lstm
     return SimulationConfig(
         setpoints=episode.setpoints,
@@ -65,29 +79,38 @@ def build_simulation_config(
         dt=torch.tensor(config.learning.dt),
         sequence_length=lstm.sequence_length,
         tbptt_window=lstm.tbptt_window,
-        warm_up_steps=lstm.warm_up_steps,
+        warm_up_steps=(
+            lstm.warm_up_steps if warm_up_steps is None else warm_up_steps
+        ),
         pid_gain_factor=config.control.gain_ceiling,
         error_scale=config.control.error_scale,
+        operating_range=config.scenario.setpoint.as_tuple(),
+        control_scale=max(
+            abs(config.control.output_min), abs(config.control.output_max)
+        ),
     )
 
 
 def run_arm(
     arm: Arm,
-    system_name: str,
     config: ConfigPack,
     rbf_model: torch.nn.Module,
     episode: Episode,
     with_disturbance: bool,
 ) -> SimulationResults:
     """Run one controller on one episode, from a guaranteed-clean state."""
-    system = build_system(system_name, config, episode.plant_parameters)
+    system = build_system(config, episode.plant_parameters)
     system.reset()
 
     if arm.per_episode_gains:
         gains = baselines.per_episode_pole_placement(system).gains
         system.reset()  # the tuner runs the plant; undo it
     else:
-        gains = arm.gains or config.control.initial_gains
+        # A residual scheduler carries its own baseline; during warm-up the
+        # PID should hold *that*, so handing control to the network is not a
+        # gain step in the middle of the episode.
+        warm_start = getattr(arm.lstm, "warm_start_gains", None)
+        gains = arm.gains or warm_start or config.control.initial_gains
 
     pid = PID(*baselines.as_tensor_gains(gains))
     pid.set_limits(
@@ -99,13 +122,91 @@ def run_arm(
     return run_episode(
         system=system,
         pid=pid,
-        simulation_config=build_simulation_config(config, episode, with_disturbance),
-        extract_rbf_input=EXTRACTORS[system_name],
+        simulation_config=build_simulation_config(
+            config, episode, with_disturbance, arm.warm_up_steps
+        ),
+        extract_rbf_input=EXTRACTORS[config.plant],
         extract_lstm_input=extract_lstm_input,
         rbf_model=rbf_model,
         lstm_model=arm.lstm,
         session="validation" if arm.lstm is not None else "static",
     ).results
+
+
+def best_fixed_gains(
+    config: ConfigPack,
+    system_name: str,
+    rbf_model: torch.nn.Module | None,
+    steps: int,
+    seed: int,
+    iterations: int = 160,
+    n_episodes: int = 8,
+) -> tuple[tuple[float, float, float], float]:
+    """The best constant Kp/Ki/Kd for this study, searched once and cached.
+
+    This triple is used twice, and using the *same* triple both times is the
+    point: it is the fixed-gain arm every comparison reports, and it is the
+    baseline the residual scheduler is centred on. Centring the network on
+    anything else (the classical tuning, say) makes "captured headroom" partly
+    measure the gap between that centre and the best constant, which is not
+    the scheduler's doing.
+
+    The search episodes are drawn at ``COMPARE_SEED_BASE`` — disjoint from
+    training, LSTM validation and the headroom probe — and the result is
+    cached in ``results/`` keyed by seed and config, so training and comparison cannot
+    drift apart by re-searching with different budgets.
+    """
+    path = f"{cnfg.METRICS_DIR}/fixed_gains_{system_name}.json"
+    # Any change to the plant, scenario, limits or budget invalidates the cache.
+    key = hashlib.sha256(
+        json.dumps(
+            [config.model_dump(mode="json"), steps, n_episodes], sort_keys=True
+        ).encode()
+    ).hexdigest()
+    if os.path.exists(path):
+        with open(path) as handle:
+            data = json.load(handle)
+        if (
+            data.get("config_hash") == key
+            and data["seed"] == seed
+            and data["iterations"] >= iterations
+        ):
+            return tuple(data["gains"]), float(data["mean_iae"])
+
+    dt = config.learning.dt
+    rng = np.random.default_rng(COMPARE_SEED_BASE + seed)
+    episodes = [
+        make_episode(config.scenario, steps, dt, rng) for _ in range(n_episodes)
+    ]
+
+    def objective(gains):
+        arm = Arm(name="search", gains=gains)
+        return baselines.mean_objective(
+            episode_cost(run_arm(arm, config, rbf_model, episode, True), dt)
+            for episode in episodes
+        )
+
+    gains, score = baselines.optimise_fixed_gains(
+        objective,
+        ceiling=config.control.gain_ceiling,
+        iterations=iterations,
+        seed=seed,
+    )
+    with open(path, "w") as handle:
+        json.dump(
+            {
+                "system": system_name,
+                "seed": seed,
+                "iterations": iterations,
+                "n_episodes": n_episodes,
+                "config_hash": key,
+                "gains": list(gains),
+                "mean_iae": score,
+            },
+            handle,
+            indent=2,
+        )
+    return gains, score
 
 
 def score_final_step(results: SimulationResults, dt: float) -> StepMetrics:
@@ -200,26 +301,22 @@ def main(system_name: str, seed: int, runs: int, show: bool) -> None:
 
     rbf_model = save_load.load_rbf_model(f"sys_rbf_{system_name}.pth")
     lstm_model = LSTMAdaptivePID(
-        input_size=5,
+        input_size=N_FEATURES,
         hidden_size=config.learning.lstm.model.hidden_size,
         output_size=3,
         num_layers=config.learning.lstm.model.num_layers,
     )
     save_load.load_model(lstm_model, f"pid_lstm_{system_name}.pth")
 
-    # Episodes for tuning the fixed-gain baseline: separate from the ones it is
-    # then scored on, so the search cannot overfit the evaluation set.
-    tune_rng = np.random.default_rng(COMPARE_SEED_BASE + seed)
-    tune_episodes = [
-        make_episode(config.scenario, steps, dt, tune_rng) for _ in range(8)
-    ]
+    # Evaluation episodes are drawn at an offset seed: separate from the ones
+    # the fixed-gain baseline is tuned on, so the search cannot overfit them.
     eval_rng = np.random.default_rng(COMPARE_SEED_BASE + seed + 7777)
     eval_episodes = [
         make_episode(config.scenario, steps, dt, eval_rng) for _ in range(runs)
     ]
 
     # ── baselines ───────────────────────────────────────────────────────
-    nominal = build_system(system_name, config)
+    nominal = build_system(config)
     classical = baselines.classical(nominal, config)
     print(
         f"Classical tuning ({classical.name}): "
@@ -227,24 +324,11 @@ def main(system_name: str, seed: int, runs: int, show: bool) -> None:
         f"Kd={classical.gains[2]:.3f}"
     )
 
-    print(
-        f"\nSearching for the best constant gains over "
-        f"{len(tune_episodes)} episodes..."
+    print("\nBest constant gains (cached search on held-out tuning episodes):")
+    best_gains, best_score = best_fixed_gains(
+        config, system_name, rbf_model, steps, seed
     )
-
-    def objective(gains):
-        arm = Arm(name="search", gains=gains)
-        return baselines.mean_objective(
-            episode_cost(
-                run_arm(arm, system_name, config, rbf_model, episode, True), dt
-            )
-            for episode in tune_episodes
-        )
-
-    best_gains, best_score = baselines.optimise_fixed_gains(
-        objective, ceiling=config.control.gain_ceiling, iterations=160, seed=seed
-    )
-    print(f"  best fixed gains: Kp={best_gains[0]:.3f} Ki={best_gains[1]:.3f} "
+    print(f"  Kp={best_gains[0]:.3f} Ki={best_gains[1]:.3f} "
           f"Kd={best_gains[2]:.3f}  (mean IAE {best_score:.3f})")
 
     arms = [
@@ -267,7 +351,7 @@ def main(system_name: str, seed: int, runs: int, show: bool) -> None:
             scores = []
             for index, episode in enumerate(eval_episodes):
                 results = run_arm(
-                    arm, system_name, config, rbf_model, episode, with_disturbance
+                    arm, config, rbf_model, episode, with_disturbance
                 )
                 scores.append(score_final_step(results, dt))
                 if index == 0:
@@ -300,7 +384,7 @@ def main(system_name: str, seed: int, runs: int, show: bool) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("system", choices=["trolley", "thermal"])
+    parser.add_argument("system", choices=available_studies())
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--runs", type=int, default=30)
     parser.add_argument("--show", action="store_true")

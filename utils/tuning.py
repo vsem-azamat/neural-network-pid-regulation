@@ -48,6 +48,31 @@ class IdentificationError(RuntimeError):
     """The step test did not produce a response the method can interpret."""
 
 
+def step_test_steps(system: BaseSystem, settling_multiple: float = 12.0) -> int:
+    """How many samples an open-loop step test needs on this plant.
+
+    Sized from the plant's own dominant time constant so the response actually
+    reaches steady state: identification reads the final value off the end of
+    the record, and a test cut short reports a smaller gain, a smaller time
+    constant and a dead time that is not there.
+    """
+    from entities.systems import Thermal, Trolley
+
+    dt = float(system.dt.reshape(-1)[0])
+    if isinstance(system, Thermal):
+        time_constant = float(system.tau)
+    elif isinstance(system, Trolley):
+        # Settling of a second-order system is governed by 1/(zeta*omega_n).
+        omega_n = float(torch.sqrt(system.spring / system.mass))
+        zeta = max(float(system.damping_ratio), 0.05)
+        time_constant = 1.0 / (zeta * omega_n)
+    else:
+        raise IdentificationError(
+            f"No time-scale estimate for {type(system).__name__}."
+        )
+    return max(50, int(settling_multiple * time_constant / dt))
+
+
 # ── process identification ───────────────────────────────────────────────
 def identify_fopdt(
     system: BaseSystem,
@@ -227,7 +252,7 @@ def pid_imc(model: FOPDT, lambda_value: float | None = None) -> Gains:
         return Kp, Kp / model.T, 0.0
 
     lam = max(lambda_value or 0.3 * model.L, 0.8 * model.L)
-    Kp = (2.0 * model.T + model.L) / (2.0 * model.K * lam)
+    Kp = (2.0 * model.T + model.L) / (model.K * (2.0 * lam + model.L))
     Ti = model.T + model.L / 2.0
     Td = (model.T * model.L) / (2.0 * model.T + model.L)
     return Kp, Kp / Ti, Kp * Td
@@ -284,7 +309,7 @@ def pole_placement(system: BaseSystem, bandwidth_factor: float = 2.0,
 
     if isinstance(system, Thermal):
         C = float(system.thermal_capacity)
-        h = float(system.heat_transfer_coefficient)
+        h = float(system.effective_loss_coefficient())  # same h as tau
         omega = bandwidth_factor / float(system.tau)
         Kp = 2.0 * damping * omega * C - h
         Ki = C * omega**2

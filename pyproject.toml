@@ -17,6 +17,16 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff>=0.4"]
 
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+# A research project run from its checkout, not a library: installing it only
+# pulls the dependencies. Without this, setuptools refuses the flat layout
+# (several top-level packages) and `pip install -e .` fails outright.
+[tool.setuptools]
+packages = []
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["ignore::UserWarning"]

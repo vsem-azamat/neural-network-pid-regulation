@@ -125,7 +125,11 @@ class PID:
 
     def _push_measurement(self, measurement: Tensor | None) -> None:
         if measurement is None:
-            self.y_k_2 = self.y_k_1 = None
+            # Clear _y_k too. Leaving a stale value behind makes the derivative
+            # look enabled while its history is empty, so the term returns a
+            # hard zero forever instead of falling back to derivative-on-error -
+            # and spikes off a stale sample if measurements ever resume.
+            self._y_k = self.y_k_1 = self.y_k_2 = None
             return
         self.y_k_2 = self.y_k_1
         self.y_k_1 = self._y_k
@@ -152,6 +156,22 @@ class PID:
                 return torch.zeros_like(error)
             return -(self._y_k - self.y_k_1) / dt
         return (error - self.prev_error) / dt
+
+    @property
+    def _max_limit(self) -> Tensor:
+        return (
+            self.saturation_max
+            if self.saturation_max is not None
+            else torch.tensor(float("inf"))
+        )
+
+    @property
+    def _min_limit(self) -> Tensor:
+        return (
+            self.saturation_min
+            if self.saturation_min is not None
+            else torch.tensor(float("-inf"))
+        )
 
     def _saturate(self, u_k: Tensor) -> Tensor:
         if self.saturation_max is None or self.saturation_min is None:
@@ -183,12 +203,22 @@ class PID:
         u_unclamped = self.Kp * error + self.Ki * integral + self.Kd * derivative
         u_k = self._saturate(u_unclamped)
 
-        # Conditional integration (clamping anti-windup): only commit the new
-        # integral if the controller is not saturated, or if the error is
-        # driving the output back inside the limits.
-        saturated = not torch.equal(u_k.detach(), u_unclamped.detach())
-        unwinding = bool((u_unclamped.detach() * error.detach() < 0).all())
-        if not saturated or unwinding:
+        # Conditional integration (clamping anti-windup): commit the new
+        # integral unless the controller is saturated *and* the error would push
+        # it further into the limit.
+        #
+        # The test is which limit was hit, not the sign of the output. Keying on
+        # sign(u)*sign(e) happens to work for a symmetric +/-u range but is
+        # simply wrong for an actuator whose range does not straddle zero - a
+        # heater limited to [0, 4000] W, for example.
+        u_raw, e_raw = u_unclamped.detach(), error.detach()
+        pushing_further_up = bool((u_raw > self._max_limit).all()) and bool(
+            (e_raw > 0).all()
+        )
+        pushing_further_down = bool((u_raw < self._min_limit).all()) and bool(
+            (e_raw < 0).all()
+        )
+        if not (pushing_further_up or pushing_further_down):
             self.integral = integral
 
         self.prev_error = error

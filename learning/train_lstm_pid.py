@@ -1,4 +1,4 @@
-"""Train the LSTM gain scheduler on top of the RBF surrogate.
+"""Train the LSTM gain scheduler.
 
     python -m learning.train_lstm_pid trolley
     python -m learning.train_lstm_pid thermal --epochs 80
@@ -13,6 +13,7 @@ episodes, so "did training help?" is answered by numbers rather than by eye.
 """
 
 import argparse
+import copy
 import json
 from dataclasses import dataclass
 from functools import partial
@@ -22,11 +23,12 @@ import torch
 from torch import optim
 
 from classes.simulation import SimulationConfig
-from config import cnfg, load_config
+from comparisons.compare import best_fixed_gains
+from config import available_studies, cnfg, load_config
 from config.models import ConfigPack
 from entities.pid import PID
 from learning.scenarios import Episode, build_system, make_episode
-from learning.utils import extract_lstm_input
+from learning.utils import N_FEATURES, extract_lstm_input
 from learning.utils.extract_rbf_input import EXTRACTORS
 from models.pid_lstm import LSTMAdaptivePID
 from utils import save_load
@@ -36,6 +38,7 @@ from utils.run import run_episode, surrogate_health, tracking_loss
 from utils.seeding import DEFAULT_SEED, seed_everything
 
 TRAIN_SEED_BASE = 10_000
+VAL_SEED_BASE = 60_000  # checkpoint selection; disjoint from both of the others
 EVAL_SEED_BASE = 90_000  # disjoint from training, so evaluation is held out
 
 
@@ -45,11 +48,50 @@ class EpochRecord:
     loss: float
     grad_norm: float
     tracking_iae: float
+    validation_iae: float | None = None
 
 
-def build_pid(config: ConfigPack) -> PID:
+def validation_iae(
+    config: ConfigPack,
+    lstm_model: torch.nn.Module,
+    rbf_model: torch.nn.Module,
+    episodes: list[Episode],
+    gains: tuple[float, float, float],
+) -> float:
+    """Mean whole-episode IAE across the validation episodes.
+
+    The same objective the fixed-gain search minimises, so "is this
+    checkpoint better than the baseline?" is asked in the baseline's own
+    terms.
+    """
+    extract_rbf = EXTRACTORS[config.plant]
+    dt = float(config.learning.dt)
+    scores = []
+    for episode in episodes:
+        system = build_system(config, episode.plant_parameters)
+        pid = build_pid(config, gains)
+        system.reset()
+        pid.reset()
+        results = run_episode(
+            system=system,
+            pid=pid,
+            simulation_config=build_simulation_config(config, episode),
+            extract_rbf_input=extract_rbf,
+            extract_lstm_input=extract_lstm_input,
+            rbf_model=rbf_model,
+            lstm_model=lstm_model,
+            session="validation",
+        ).results
+        errors = np.abs(np.array(results.as_floats("error_history")))
+        scores.append(float(np.trapezoid(errors, dx=dt)))
+    return float(np.mean(scores))
+
+
+def build_pid(
+    config: ConfigPack, gains: tuple[float, float, float] | None = None
+) -> PID:
     control = config.control
-    pid = PID(*(torch.tensor(g) for g in control.initial_gains))
+    pid = PID(*(torch.tensor(g) for g in (gains or control.initial_gains)))
     pid.set_limits(
         torch.tensor(control.output_max), torch.tensor(control.output_min)
     )
@@ -69,21 +111,29 @@ def build_simulation_config(
         warm_up_steps=lstm.warm_up_steps,
         pid_gain_factor=config.control.gain_ceiling,
         error_scale=config.control.error_scale,
+        operating_range=config.scenario.setpoint.as_tuple(),
+        control_scale=max(
+            abs(config.control.output_min), abs(config.control.output_max)
+        ),
     )
 
 
 def evaluate(
-    system_name: str,
     config: ConfigPack,
     lstm_model: torch.nn.Module | None,
     rbf_model: torch.nn.Module,
     episodes: list[Episode],
     with_disturbance: bool = True,
+    gains: tuple[float, float, float] | None = None,
 ) -> dict:
     """Score a controller across held-out episodes.
 
     ``lstm_model=None`` runs the fixed-gain baseline on exactly the same
-    episodes, which is the only way the two numbers are comparable.
+    episodes, which is the only way the two numbers are comparable. ``gains``
+    sets that baseline (and the warm-up gains of the scheduler arm); the
+    training report passes the residual centre for both, so its table answers
+    the only interesting question — does the scheduler beat the constant
+    controller it started as?
 
     ``with_disturbance`` selects the protocol, and the two answer different
     questions. Under a load disturbance that keeps changing, no controller ever
@@ -92,12 +142,12 @@ def evaluate(
     are where the step-response shape metrics are readable. Reporting one number
     for both protocols at once is how a comparison ends up with a column of NaN.
     """
-    extract_rbf = EXTRACTORS[system_name]
+    extract_rbf = EXTRACTORS[config.plant]
     per_episode = []
 
     for episode in episodes:
-        system = build_system(system_name, config, episode.plant_parameters)
-        pid = build_pid(config)
+        system = build_system(config, episode.plant_parameters)
+        pid = build_pid(config, gains)
         system.reset()
         pid.reset()
 
@@ -182,29 +232,32 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
     lstm_config = config.learning.lstm
     num_epochs = epochs if epochs is not None else lstm_config.num_epochs
     steps = int(lstm_config.train_time / config.learning.dt)
-    extract_rbf = EXTRACTORS[system_name]
+    extract_rbf = EXTRACTORS[config.plant]
 
     rbf_model = save_load.load_rbf_model(f"sys_rbf_{system_name}.pth")
     for parameter in rbf_model.parameters():
         parameter.requires_grad_(False)  # the surrogate is fixed during control training
 
-    # Warm-start at the classical gains, so training is measured by whether it
-    # improves on a competent controller rather than on a random one.
-    ceiling = config.control.gain_ceiling
-    initial_fraction = tuple(
-        g / c
-        for g, c in zip(config.control.initial_gains, ceiling, strict=True)
+    # Centre the residual scheduler on the best constant gains for this study.
+    # The untrained network then *is* the controller it will be compared
+    # against, and training can only be judged by the deviation it learns.
+    baseline_gains, baseline_iae = best_fixed_gains(
+        config, system_name, rbf_model, steps, seed
     )
     lstm_model = LSTMAdaptivePID(
-        input_size=5,
+        input_size=N_FEATURES,
         hidden_size=lstm_config.model.hidden_size,
         output_size=3,
         num_layers=lstm_config.model.num_layers,
         dropout=lstm_config.model.dropout,
-        initial_gain_fraction=initial_fraction,
+        baseline_gains=baseline_gains,
+        gain_ceiling=config.control.gain_ceiling,
+        residual_range=config.control.residual_range,
     )
-    print(f"  warm start at Kp/Ki/Kd = {config.control.initial_gains} "
-          f"(fractions {tuple(round(f, 3) for f in initial_fraction)})")
+    print(f"  residual baseline Kp/Ki/Kd = "
+          f"{tuple(round(float(g), 2) for g in baseline_gains)} "
+          f"(search IAE {baseline_iae:.3f}), "
+          f"correction band x{config.control.residual_range}")
 
     optimizer_cls = optim.Adam if lstm_config.optimizer.name == "adam" else optim.SGD
     kwargs = (
@@ -227,16 +280,41 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
         for _ in range(12)
     ]
 
+    # Validation episodes for checkpoint selection: disjoint from the training
+    # stream and from the final evaluation set, so selecting on them biases
+    # neither.
+    val_rng = np.random.default_rng(VAL_SEED_BASE + seed)
+    val_episodes = [
+        make_episode(config.scenario, steps, config.learning.dt, val_rng)
+        for _ in range(6)
+    ]
+    val_interval = 5
+
     print(f"Training on {system_name}: {num_epochs} episodes x {steps} steps")
     print(f"  loss target: {lstm_config.loss_target}")
     history: list[EpochRecord] = []
+
+    # The untrained network is exactly the baseline controller, and it is the
+    # first checkpoint candidate. Training episodes are noisy enough that the
+    # final epoch is routinely not the best one — saving it unconditionally
+    # let a wandering network ship a controller *worse* than its own starting
+    # point, which selection against the baseline makes impossible (up to the
+    # validation/test gap).
+    lstm_model.eval()
+    best_val = validation_iae(
+        config, lstm_model, rbf_model, val_episodes, baseline_gains
+    )
+    lstm_model.train()
+    best_state = copy.deepcopy(lstm_model.state_dict())
+    best_epoch = 0
+    print(f"  validation IAE at the baseline (epoch 0): {best_val:9.2f}")
 
     for epoch in range(num_epochs):
         rng = np.random.default_rng(TRAIN_SEED_BASE + seed + epoch)
         episode = make_episode(config.scenario, steps, config.learning.dt, rng)
 
-        system = build_system(system_name, config, episode.plant_parameters)
-        pid = build_pid(config)
+        system = build_system(config, episode.plant_parameters)
+        pid = build_pid(config, baseline_gains)
         system.reset()
         pid.reset()
 
@@ -256,6 +334,7 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
                 target=lstm_config.loss_target,
                 overshoot_weight=lstm_config.overshoot_weight,
                 effort_weight=lstm_config.effort_weight,
+                gain_rate_weight=lstm_config.gain_rate_weight,
             ),
         )
         scheduler.step()
@@ -267,15 +346,39 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
             grad_norm=report.mean_grad_norm,
             tracking_iae=float(np.trapezoid(errors, dx=config.learning.dt)),
         )
+
+        if (epoch + 1) % val_interval == 0 or epoch + 1 == num_epochs:
+            lstm_model.eval()
+            record.validation_iae = validation_iae(
+                config, lstm_model, rbf_model, val_episodes, baseline_gains
+            )
+            lstm_model.train()
+            if record.validation_iae < best_val:
+                best_val = record.validation_iae
+                best_state = copy.deepcopy(lstm_model.state_dict())
+                best_epoch = epoch + 1
+
         history.append(record)
 
         if (epoch + 1) % max(1, num_epochs // 12) == 0 or epoch == 0:
+            val_note = (
+                f"  val {record.validation_iae:9.2f}"
+                if record.validation_iae is not None
+                else ""
+            )
             print(
                 f"  epoch {record.epoch:>3}/{num_epochs}  "
                 f"loss {record.loss:.5f}  |grad| {record.grad_norm:.3e}  "
-                f"IAE {record.tracking_iae:9.2f}"
+                f"IAE {record.tracking_iae:9.2f}{val_note}"
             )
 
+    lstm_model.load_state_dict(best_state)
+    if best_epoch == 0:
+        print(f"\n  Selected checkpoint: the baseline (epoch 0), val IAE "
+              f"{best_val:.2f} — no epoch improved on it.")
+    else:
+        print(f"\n  Selected checkpoint: epoch {best_epoch}, "
+              f"val IAE {best_val:.2f}")
     save_load.save_model(lstm_model, f"pid_lstm_{system_name}.pth")
 
     # ── held-out evaluation ─────────────────────────────────────────────
@@ -285,10 +388,12 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
     for name, disturbed in (("tracking", False), ("rejection", True)):
         protocols[name] = {
             "fixed_gain": evaluate(
-                system_name, config, None, rbf_model, eval_episodes, disturbed
+                config, None, rbf_model, eval_episodes, disturbed,
+                gains=baseline_gains,
             ),
             "lstm_scheduled": evaluate(
-                system_name, config, lstm_model, rbf_model, eval_episodes, disturbed
+                config, lstm_model, rbf_model, eval_episodes, disturbed,
+                gains=baseline_gains,
             ),
         }
         report_table(name, protocols[name])
@@ -297,8 +402,8 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
     # plant under the trained controller.
     probe = eval_episodes[0]
     probe_results = run_episode(
-        system=build_system(system_name, config, probe.plant_parameters),
-        pid=build_pid(config),
+        system=build_system(config, probe.plant_parameters),
+        pid=build_pid(config, baseline_gains),
         simulation_config=build_simulation_config(config, probe),
         extract_rbf_input=extract_rbf,
         extract_lstm_input=extract_lstm_input,
@@ -312,6 +417,10 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
         "seed": seed,
         "epochs": num_epochs,
         "loss_target": lstm_config.loss_target,
+        "residual_baseline": list(baseline_gains),
+        "residual_range": config.control.residual_range,
+        "selected_epoch": best_epoch,
+        "selected_validation_iae": best_val,
         "surrogate": surrogate_health(probe_results),
         "protocols": protocols,
         "history": [vars(r) for r in history],
@@ -328,7 +437,7 @@ def main(system_name: str, seed: int, epochs: int | None, show: bool) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("system", choices=["trolley", "thermal"])
+    parser.add_argument("system", choices=available_studies())
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--epochs", type=int, default=None)
     parser.add_argument("--show", action="store_true")

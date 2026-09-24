@@ -1,208 +1,197 @@
 # Adaptive PID Regulation by Neural Networks
 
-An LSTM gain scheduler for PID control, trained through a differentiable
-simulation and measured against fixed-gain baselines on two plants: a
-mass–spring–damper trolley and a lumped-capacity thermal system.
+An LSTM network that schedules the gains of a PID controller online, trained
+end-to-end through a differentiable simulation of the plant. An RBF network
+learns a surrogate model of the plant. Tested on a trolley (mass–spring–damper)
+and a thermal system, each in a linear and a nonlinear variant, against
+classical tuning and the best constant gains found by search.
 
-Originally a bachelor's thesis; since rebuilt to make the experiment
-reproducible and the comparison honest. See [What changed](#what-changed).
+Bachelor's thesis project, later reworked so the experiment trains, reproduces
+and compares fairly (see [Changes since the thesis](#changes-since-the-thesis)).
+
+![Nonlinear trolley, one held-out episode](docs/trolley_nonlinear_episode.png)
+
+*Nonlinear trolley, one held-out episode. Bottom panel: the LSTM (green)
+lowers Kp at every setpoint change and raises it again while holding the
+position. The best constant (orange) cannot do this.*
 
 ## Contents
 
-1. [Result](#result)
-2. [How it works](#how-it-works)
-3. [Setup](#setup)
-4. [Running it](#running-it)
-5. [Layout](#layout)
-6. [Configuration](#configuration)
-7. [What changed](#what-changed)
-8. [Acknowledgements](#acknowledgements)
-
-## Result
-
-24 held-out episodes per plant, seed 42, mean IAE over the final reference step.
-Every controller runs the *same* episodes — same reference staircase, same load
-disturbances, same randomised plant parameters — and the plant and controller are
-reset before every run. Lower is better.
-
-| Plant   | Protocol  | Classical rule | Best fixed gains | **LSTM scheduled** | Per-episode pole placement |
-|---------|-----------|---------------:|-----------------:|-------------------:|---------------------------:|
-| Trolley | tracking  |           7.41 |         **5.37** |               5.47 |                       7.67 |
-| Trolley | rejection |           8.02 |         **5.60** |               5.68 |                       8.20 |
-| Thermal | tracking  |          821.6 |            381.4 |          **380.1** |                      538.8 |
-| Thermal | rejection |          992.9 |            495.7 |          **495.3** |                      728.7 |
-
-**The scheduler clearly beats classical tuning** — 26 % lower IAE on the trolley,
-54 % on the thermal plant — and it beats gains derived from each episode's *true*
-plant parameters, which it never sees.
-
-**It does not beat the best constant gains found by direct search.** On both
-plants it lands within 2 % of that baseline, on either side of it. On the trolley
-it also uses about 30 % more actuator movement to get there. Whether adaptivity
-is worth anything here is therefore not settled by these experiments; on this
-problem, a well-searched constant PID is already about as good.
-
-That narrower claim is the honest one. Beating a tuning rule mostly shows that
-tuning rules are conservative — they are designed to be, since they get one shot
-at an unknown plant. The searched baseline is the one a gain *scheduler* has to
-beat to justify itself, and reporting it is the difference between a result and
-a press release.
-
-Full tables, including overshoot, settling time, per-episode win rates and how
-many runs each mean is computed from, are printed by `comparisons.compare` and
-written to `results/`.
+1. [How it works](#how-it-works)
+2. [Results](#results)
+3. [Quick start](#quick-start)
+4. [Project layout](#project-layout)
+5. [Configuration](#configuration)
+6. [Changes since the thesis](#changes-since-the-thesis)
+7. [Acknowledgements](#acknowledgements)
 
 ## How it works
 
+```mermaid
+flowchart LR
+    R([setpoint r]) --> E((−))
+    E -- e --> PID[PID]
+    PID -- u --> P[plant<br/>torch, differentiable]
+    P -- y --> E
+    P -. y, u, e, gains .-> F[normalised<br/>loop history]
+    F --> L[LSTM 8→48→3]
+    L -- "K = K₀ · range^(2σ(z)−1)" --> PID
+    K0[/"K₀: best constant gains<br/>(searched once)"/] --> L
 ```
-        ┌──────────────┐  gains   ┌─────┐   u    ┌───────┐   y
-        │ LSTM (5→48→3)│─────────▶│ PID │───────▶│ plant │────┬──▶
-        └──────────────┘          └─────┘        └───────┘    │
-               ▲                                              │
-               └────────── normalised loop history ───────────┘
-```
 
-* **The plants are written in torch**, so the whole closed loop is
-  differentiable and the tracking loss can be back-propagated through the
-  simulation into the network. Gradients are exact, not estimated.
-* **Truncated BPTT**: an optimizer step every `tbptt_window` samples, with the
-  plant, the controller and the LSTM hidden state detached at the boundary.
-* **The LSTM sees dimensionless features** — normalised error, error rate, and
-  each gain as a fraction of its ceiling — so one architecture serves a plant
-  measured in metres and one measured in kelvin.
-* **Its head is a sigmoid into a per-gain ceiling**, so gains are bounded by
-  construction and Kp, Ki and Kd can occupy the very different ranges a real
-  controller needs.
-* **It is warm-started at the classical gains**, so training is judged by whether
-  it improves on a competent controller rather than on a random one.
-* **The RBF network** is a one-step-ahead plant surrogate, fitted on trajectories
-  from randomised initial conditions. Held-out one-step error is ≈1 % of the
-  output's own spread on both plants. Setting `loss_target: surrogate` trains the
-  controller *through* it instead of through the true plant — the setting you are
-  forced into when the plant is not differentiable, and the reason the surrogate
-  is in the architecture at all.
+| Piece | What it does |
+|---|---|
+| **Plants** | Written in torch, so the tracking loss back-propagates through the simulation into the LSTM. Gradients are exact. |
+| **Residual head** | The LSTM outputs a bounded multiplicative correction around the best constant gains `K₀`. Its last layer starts at zero, so the untrained network *is* the baseline it is compared with. |
+| **Features** | Eight dimensionless inputs: error, error rate, the three gains, operating point, commanded operating point, control signal. One architecture fits a plant in metres and one in kelvin. |
+| **Loss** | Huber tracking error + overshoot penalty + penalty on how fast the gains change. |
+| **Training** | Every episode draws a new setpoint staircase, new load disturbances and new plant parameters. Truncated BPTT over windows of 20–25 steps. |
+| **Checkpoint** | Picked on validation episodes. Epoch 0 (the baseline itself) is a candidate, so the saved model is never worse than the baseline on validation. |
+| **RBF surrogate** | One-step-ahead plant model (0.3–2.3 % normalised RMSE on held-out data). Optional: `loss_target: surrogate` trains through it instead of the plant, the setting you need when the real plant is not differentiable. |
 
-Each episode redraws the reference staircase, the load disturbances and the
-plant's physical parameters, which is what makes gain scheduling a meaningful
-thing to attempt: on a fixed plant tracking a constant, a constant gain is optimal.
+## Results
 
-## Setup
+Seed 42, held-out episodes, IAE (integral of absolute error), lower is better.
+
+**How much can adaptation win at all?** `comparisons.headroom` measures the
+ceiling without any network. It compares one global constant against oracles
+that are searched on each episode separately, with full knowledge of that
+episode's plant: first the best constant per episode, then the best 4-bin
+gain table keyed on the operating point.
+
+| Study              | one constant | best constant /episode | best table /episode | **LSTM** | headroom | LSTM gain |
+|--------------------|-------------:|-----------------------:|--------------------:|---------:|---------:|----------:|
+| Trolley, linear    |        34.73 |                  34.07 |               33.97 |    34.65 |   +2.2 % |    +0.2 % |
+| Trolley, nonlinear |        20.84 |                  20.19 |               19.97 |**20.10** |   +4.2 % | **+3.5 %**|
+| Thermal, linear    |       2822.5 |                 2742.4 |              2603.7 |**2657.9**|   +7.8 % | **+5.8 %**|
+| Thermal, nonlinear |       5212.0 |                 5190.3 |              5175.3 |**5168.2**|   +0.7 % | **+0.8 %**|
+
+**Four-arm comparison** (`comparisons.compare`, 30 episodes, final setpoint
+step, with load disturbance):
+
+| Study              | Classical rule | Best constant | **LSTM** | Pole placement /episode | LSTM better in |
+|--------------------|---------------:|--------------:|---------:|------------------------:|---------------:|
+| Trolley, linear    |           7.57 |      **5.35** |     5.37 |                    7.75 |           57 % |
+| Trolley, nonlinear |           5.92 |          3.43 | **3.35** |                    5.70 |           80 % |
+| Thermal, linear    |          777.8 |         538.7 |**528.4** |                   745.1 |           70 % |
+| Thermal, nonlinear |         1442.8 |         809.3 |**801.9** |                  1361.7 |           70 % |
+
+"LSTM better in" is the share of episodes where the LSTM beats the best
+constant on IAE.
+
+What this shows:
+
+- **Where there is headroom, the LSTM takes most of it.** On the nonlinear
+  trolley (a spring 14× stiffer at the end of travel than at the origin, plus
+  dry friction) it wins 3.5 % of the possible 4.2 %. On the linear thermal
+  plant it wins 5.8 % of 7.8 %: a heater that cannot cool wants different
+  gains for rising and falling steps. In both cases it does this without
+  knowing the plant, while the oracles are searched per episode.
+- **Where there is little headroom, there is little to win.** The nonlinear
+  thermal plant has only 0.7 %, since heater power, not the gains, limits
+  the transients. On the linear trolley (2.2 %) the headroom comes almost
+  entirely from recognising which plant was drawn, and the LSTM gets almost
+  none of it. That is the open problem.
+- **Gains are not free.** The LSTM uses 3–28 % more control effort than the
+  best constant. All gains are capped by `control.gain_ceiling`, and on every
+  plant the best constant sits at the Ki cap: the model has no sensor noise,
+  so higher gains cost nothing. The cap stands in for that noise.
+- **Classical rules lose to every searched controller.** They get one shot at
+  an unknown plant and are conservative by design. The baseline that matters
+  is the best constant.
+
+Both tables are printed by `python -m comparisons.summary` from `results/`.
+
+## Quick start
 
 ```sh
 git clone https://github.com/vsem-azamat/neural-network-pid-regulation
 cd neural-network-pid-regulation
 python3 -m venv venv && source venv/bin/activate
-pip install -r requirements.txt        # or: pip install -e ".[dev]"
+pip install -e ".[dev]"          # Python 3.11+, CPU is enough
 ```
 
-Python 3.11+. CPU is fine — a full pipeline run takes a few minutes.
-
-## Running it
-
-Everything, both plants, reproducibly:
+Run everything (4 studies, roughly 1.5–2 h each on a CPU, most of it the
+headroom search):
 
 ```sh
-python run_pipeline.py
+python run_pipeline.py                       # all studies
+python run_pipeline.py --system trolley      # one study
+python run_pipeline.py --skip headroom       # skip the slowest stage
 ```
 
-Or stage by stage:
+Or one stage at a time:
 
 ```sh
-python -m simulations.analyse_plant trolley   # step, phase portrait, Bode, Nyquist
-python -m learning.train_rbf        trolley   # fit the plant surrogate
-python -m learning.train_lstm_pid   trolley   # train the gain scheduler
-python -m comparisons.compare       trolley --runs 24
+python -m simulations.analyse_plant  trolley_nonlinear  # step, phase, Bode, Nyquist
+python -m learning.train_rbf         trolley_nonlinear  # RBF surrogate
+python -m learning.train_lstm_pid    trolley_nonlinear  # LSTM scheduler
+python -m comparisons.compare        trolley_nonlinear  # four-arm comparison
+python -m comparisons.headroom       trolley_nonlinear  # adaptation ceiling
+python -m comparisons.summary                           # tables above
 ```
 
-Both plants accept `trolley` or `thermal`. Add `--show` to open figures,
-`--seed N` to change the seed. Metrics are written to `results/*.json`, figures
-to `plots/`.
+Studies: `trolley`, `trolley_nonlinear`, `thermal`, `thermal_nonlinear`.
+Common flags: `--seed N`, `--show`. Outputs: `weights/`, `results/*.json`,
+`plots/`.
 
-Tests:
+Tests and lint: `python -m pytest` (121 tests), `ruff check .`
 
-```sh
-python -m pytest          # 70 tests
-ruff check .
+## Project layout
+
 ```
-
-## Layout
-
-| Path                        | What it holds                                            |
-|-----------------------------|----------------------------------------------------------|
-| `entities/systems/`         | The plants. Add one file to add a plant.                 |
-| `entities/pid.py`           | Discrete PID, five discretisations, differentiable.       |
-| `models/`                   | `LSTMAdaptivePID`, `SystemRBFModel`.                      |
-| `utils/run.py`              | Simulation loop and TBPTT training.                       |
-| `utils/metrics.py`          | Step-response metrics.                                    |
-| `utils/tuning.py`           | Classical tuning and pole placement.                      |
-| `learning/scenarios.py`     | Episode generation.                                       |
-| `comparisons/`              | Baselines and the comparison harness.                     |
-| `config/ymls/`              | Per-plant configuration.                                  |
-| `tests/`                    | 70 tests, most pinned to a specific past defect.          |
+entities/        plants (trolley, thermal) and the discrete PID
+models/          LSTMAdaptivePID, SystemRBFModel
+learning/        episode generation, feature extraction, training scripts
+comparisons/     baselines, four-arm comparison, headroom, summary tables
+simulations/     open-loop plant analysis
+utils/           simulation loop and loss, metrics, classical tuning, plots
+config/ymls/     one YAML per study, validated by pydantic
+tests/           unit and regression tests
+run_pipeline.py  all stages, all studies
+```
 
 ## Configuration
 
-One YAML per plant in `config/ymls/`, validated by pydantic on load. Network
-input widths are *not* configurable — they are fixed by the feature extractors,
-which removes a way for the two to silently disagree.
+Each study is one YAML file in `config/ymls/`. The main settings:
 
-Notable knobs:
+| Key | Meaning |
+|---|---|
+| `control.gain_ceiling` | Hard upper limit on each gain |
+| `control.residual_range` | How far the LSTM may move each gain from `K₀` (×/÷ this factor) |
+| `control.error_scale` | Typical error size, used to normalise loss and features |
+| `scenario.randomize_plant` | Ranges of plant parameters drawn per episode |
+| `scenario.disturbance_scale` | Load disturbance amplitude |
+| `learning.lstm.loss_target` | `plant` (exact gradients) or `surrogate` (through the RBF) |
+| `learning.lstm.gain_rate_weight` | Penalty on the rate of gain change |
+| `learning.lstm.effort_weight` | Penalty on actuator movement |
 
-| Key                              | Meaning                                                 |
-|----------------------------------|---------------------------------------------------------|
-| `control.gain_ceiling`           | Hard cap on each gain. Size it from what the plant needs.|
-| `control.error_scale`            | Characteristic error, used to normalise the loss and features. |
-| `scenario.randomize_plant`       | Per-episode parameter ranges.                            |
-| `scenario.disturbance_scale`     | Load disturbance amplitude.                              |
-| `learning.lstm.loss_target`      | `plant` (exact gradients) or `surrogate` (model-based).  |
-| `learning.lstm.effort_weight`    | Penalty on actuator movement.                            |
+## Changes since the thesis
 
-## What changed
+The thesis version did not actually train: a `torch.tensor([...])` call cut
+the autograd graph, so every LSTM parameter got `grad=None` and the published
+figures came from an untrained network. The main fixes:
 
-The original version did not train. `extract_rbf_input` rebuilt its feature row
-with `torch.tensor([...])`, which copies numbers out of the autograd graph, so
-the backward pass stopped at the plant boundary. The loss still had
-`requires_grad=True` — the RBF's own weights were in the graph — so nothing
-raised, the loss printed, the figures drew and the weights saved, while every
-LSTM parameter came back with `grad=None` and `optimizer.step()` did nothing.
-Measured before the fix: 6/6 parameter tensors `grad=None`, `sum|grad|` exactly
-`0.0`. Every published figure came from an untrained, randomly initialised
-network. `tests/test_gradient_flow.py` now fails if that recurs.
-
-Other things that were wrong, roughly in order of how much they mattered:
-
-* Two of the four entry points crashed on import — a deleted `SpringDamper` and a
-  stray `from turtle import title`.
-* Training episodes were `[torch.randn(1) * 10] * n`, which repeats one object:
-  one step to a random constant, no disturbance, fixed plant.
-* Load disturbances were computed in both comparison scripts and then never used;
-  no call site anywhere passed one to a plant.
-* Overshoot used `max(y)` and rise time compared against `0.9·|setpoint|`, both of
-  which break on negative setpoints — and setpoints were drawn from (−20, 20).
-* Settling time returned the *first* entry into the tolerance band instead of the
-  last exit from it, certifying a permanently oscillating response as settled.
-* The third comparison arm ran without a reset, starting from wherever the
-  previous arm had left the plant, and each arm drew its own random setpoint.
-* A metric histogram was drawn from one run and annotated with another's
-  statistics.
-* The LSTM's hidden state was assigned to a local and discarded, so the
-  recurrence was off during every comparison.
-* The thermal plant exchanged heat with 0 K rather than with ambient.
-* The trolley subtracted the disturbance where the thermal plant added it.
-* The RBF was fitted on independent random states including an acceleration that
-  `apply_control` immediately overwrote, over a range 5× wider than the loop ever
-  visits, and the thermal model was then validated in Celsius against a plant
-  running in kelvin.
-* `torch.autograd.set_detect_anomaly(True)` was left on in the run path.
-* The two-point identification mixed coefficients from two different variants of
-  the method, reporting T = 222 s for a plant whose true time constant is 100 s.
-* Ziegler–Nichols returned the derivative *time* as Kd, short by a factor of Kp.
-* The derivative acted on the error, so a setpoint step asked for 200 units of
-  control on one sample and the trolley lurched to −8.9 before recovering.
-* `requirements.txt` asked for a package named `pytorch` and omitted `pyyaml`.
-* The README promised Nyquist and Bode plots that no code produced. It does now.
+- **Gradient flow restored**, and guarded by `tests/test_gradient_flow.py`.
+- **A task worth learning:** randomised setpoint staircases, load disturbances
+  and plant parameters, instead of one repeated random step.
+- **Operating point and actuator saturation added to the LSTM inputs**, which
+  a gain schedule needs on a nonlinear plant.
+- **Residual gains around the best constant**, plus checkpoint selection on
+  validation episodes.
+- **Fair comparison:** every controller starts from a clean state on the same
+  episodes, and it is compared with a searched constant, not only with a
+  tuning rule. The headroom diagnostic measures what adaptation can win.
+- **Nonlinear plant variants** (hardening spring + dry friction, radiative
+  heat loss).
+- **Correct metrics:** overshoot, rise and settling time now work for negative
+  and falling steps.
+- **Correct plants and tuning:** thermal heat exchange is with ambient
+  temperature, not 0 K; the Ziegler–Nichols `Kd` is fixed; the derivative acts
+  on the measurement.
+- **Reproducibility:** one seed for everything, a pipeline script, tests and CI.
 
 ## Acknowledgements
 
-Bachelor's thesis work, supervised by Ing. Cyril Oswald, Ph.D.
+Bachelor's thesis, supervised by Ing. Cyril Oswald, Ph.D.
 ([ORCID](https://orcid.org/0000-0001-5268-2785)).
